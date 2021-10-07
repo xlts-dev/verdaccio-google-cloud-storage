@@ -41,42 +41,13 @@ export default class StorageHelper implements IStorageHelper {
     return this.storage.bucket(this.config.bucket);
   }
 
+  // TODO - If the datastore api requires paging this is not currently handled
   public async runQuery(query: Query): Promise<RunQueryResponse> {
     // https://cloud.google.com/datastore/docs/reference/data/rest/v1/projects/runQuery
     const result = await this.datastore.runQuery(query);
 
     return result;
   }
-
-  // public async updateEntity(key: string, excludeFromIndexes: any, data: any): Promise<CommitResult> {
-  //   const entity = {
-  //     key,
-  //     excludeFromIndexes,
-  //     data
-  //   };
-
-  //   const result: CommitResult = await this.datastore.update(entity);
-
-  //   return result;
-  // }
-
-  // FIXME: not sure whether we need this
-  // public async getFile(bucketName: string, path: string): Promise<void> {
-  // const myBucket = this.storage.bucket(bucketName);
-  // const file = myBucket.file(path);
-  // const data = await file.get();
-  // const fileData = data[0];
-  // const apiResponse = data[1];
-  // // console.log('fileData', fileData);
-  // // console.log('apiResponse', apiResponse);
-  // }
-
-  // public async deleteEntity(key: string, itemId: any): Promise<any> {
-  //   const keyToDelete = this.datastore.key([key, this.datastore.int(itemId)]);
-  //   const deleted = await this.datastore.delete(keyToDelete);
-
-  //   return deleted;
-  // }
 
   /**
    * Data objects in Cloud Firestore in Datastore mode are known as entities.
