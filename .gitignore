@@ -1,5 +1,6 @@
 _storage/
 lib/
 node_modules/
+.idea/
 !src/**/__tests__/**/*.tgz
 !tests/**/*.tgz

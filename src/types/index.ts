@@ -7,7 +7,7 @@ export interface VerdaccioConfigGoogleStorage extends Config {
   // TODO: add description
   projectId?: string;
   // https://cloud.google.com/datastore/docs/reference/data/rest/v1/Key
-  kind?: string;
+  dataStoreKind?: string;
   // for local development
   keyFilename?: string;
   // disable bucket validation
@@ -17,9 +17,3 @@ export interface VerdaccioConfigGoogleStorage extends Config {
 }
 
 export type GoogleValidation = boolean | string;
-
-export interface GoogleDataStorage {
-  secret: string;
-  storage: any;
-  datastore: Datastore;
-}

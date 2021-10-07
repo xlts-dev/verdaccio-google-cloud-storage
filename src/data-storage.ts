@@ -1,95 +1,84 @@
 import { Storage } from '@google-cloud/storage';
 import { Datastore, DatastoreOptions } from '@google-cloud/datastore';
-import { getServiceUnavailable, getInternalError, VerdaccioError } from '@verdaccio/commons-api';
-import { Logger, Callback, IPluginStorage, Token, TokenFilter, IPackageStorageManager } from '@verdaccio/types';
 import { CommitResponse } from '@google-cloud/datastore/build/src/request';
 import { RunQueryResponse } from '@google-cloud/datastore/build/src/query';
 import { entity } from '@google-cloud/datastore/build/src/entity';
+import { getServiceUnavailable, getInternalError, VerdaccioError } from '@verdaccio/commons-api';
+import { Logger, Callback, IPluginStorage, ITokenActions, Token, TokenFilter, IPackageStorageManager } from '@verdaccio/types';
 
-import { VerdaccioConfigGoogleStorage, GoogleDataStorage } from './types';
+import { VerdaccioConfigGoogleStorage } from './types';
 import StorageHelper, { IStorageHelper } from './storage-helper';
 import GoogleCloudStorageHandler from './storage';
-type Key = entity.Key;
 
-export const ERROR_MISSING_CONFIG = 'google cloud storage missing config. Add `store.google-cloud` to your config file';
+export const ERROR_MISSING_CONFIG = 'Google cloud storage config missing. Add `store.google-cloud-storage` to your config file.';
 
-class GoogleCloudDatabase implements IPluginStorage<VerdaccioConfigGoogleStorage> {
+class GoogleCloudDatabase implements IPluginStorage<VerdaccioConfigGoogleStorage>, ITokenActions {
   private helper: IStorageHelper;
   public logger: Logger;
   public config: VerdaccioConfigGoogleStorage;
-  private kind: string;
-  private bucketName: string;
-  private keyFilename: string | undefined;
-  private GOOGLE_OPTIONS: DatastoreOptions | undefined;
+  private readonly dataStoreKind: string;
+  private readonly datastore: Datastore;
+  private readonly storage: Storage;
 
   public constructor(config: VerdaccioConfigGoogleStorage, options: any) {
-    if (!config) {
-      throw new Error(ERROR_MISSING_CONFIG);
+    switch (true as boolean) {
+      case !config:
+        throw new Error(ERROR_MISSING_CONFIG);
+      case !config.bucket || typeof config.bucket !== 'string':
+        throw new Error('Google Cloud Storage requires a bucket name, please define one.');
+      case !config.projectId || typeof config.projectId !== 'string':
+        throw new Error('Google Cloud Storage requires a projectId.');
     }
 
     this.config = config;
     this.logger = options.logger;
-    this.kind = config.kind || 'VerdaccioDataStore';
-    // if (!this.keyFilename) {
-    //   throw new Error('Google Storage requires a a key file');
-    // }
-    if (!config.bucket) {
-      throw new Error('Google Cloud Storage requires a bucket name, please define one.');
-    }
-    this.bucketName = config.bucket;
-    const { datastore, storage } = this._createEmptyDatabase();
-    this.helper = new StorageHelper(datastore, storage, this.config);
+    this.dataStoreKind = config.dataStoreKind || 'VerdaccioDataStore';
+
+    const storageOptions: DatastoreOptions = this._getGoogleStorageOptions(this.config);
+    this.datastore = new Datastore(storageOptions);
+    this.storage = new Storage(storageOptions);
+    this.helper = new StorageHelper(this.datastore, this.storage, this.config);
   }
 
-  private _getGoogleOptions(config: VerdaccioConfigGoogleStorage): DatastoreOptions {
-    const GOOGLE_OPTIONS: DatastoreOptions = {};
+  private _getGoogleStorageOptions(config: VerdaccioConfigGoogleStorage): DatastoreOptions {
+    const storageOptions: DatastoreOptions = {
+      projectId: config.projectId
+    };
 
-    if (!config.projectId || typeof config.projectId !== 'string') {
-      throw new Error('Google Cloud Storage requires a ProjectId.');
-    }
-
-    GOOGLE_OPTIONS.projectId = config.projectId || process.env.GOOGLE_CLOUD_VERDACCIO_PROJECT_ID;
-
-    const keyFileName = config.keyFilename || process.env.GOOGLE_CLOUD_VERDACCIO_KEY;
-
-    if (keyFileName) {
-      GOOGLE_OPTIONS.keyFilename = keyFileName;
+    if (config.keyFileName) {
+      storageOptions.keyFilename = config.keyFileName;
       this.logger.warn('Using credentials in a file might be un-secure and is only recommended for local development');
     }
 
-    this.logger.warn({ content: JSON.stringify(GOOGLE_OPTIONS) }, 'Google storage settings: @{content}');
-    return GOOGLE_OPTIONS;
+    this.logger.warn({ content: JSON.stringify(storageOptions) }, 'Google storage settings: @{content}');
+    return storageOptions;
   }
 
-  public search(onPackage: Callback, onEnd: Callback): void {
-    this.logger.warn('search method has not been implemented yet');
-
-    onEnd();
+  public getPackageStorage(packageInfo: string): IPackageStorageManager {
+    const { helper, config, logger } = this;
+    return new GoogleCloudStorageHandler(packageInfo, helper, config, logger);
   }
 
   public saveToken(token: Token): Promise<void> {
     this.logger.warn({ token }, 'save token has not been implemented yet @{token}');
-
     return Promise.reject(getServiceUnavailable('[saveToken] method not implemented'));
   }
 
   public deleteToken(user: string, tokenKey: string): Promise<void> {
     this.logger.warn({ tokenKey, user }, 'delete token has not been implemented yet @{user}');
-
     return Promise.reject(getServiceUnavailable('[deleteToken] method not implemented'));
   }
 
   public readTokens(filter: TokenFilter): Promise<Token[]> {
     this.logger.warn({ filter }, 'read tokens has not been implemented yet @{filter}');
-
     return Promise.reject(getServiceUnavailable('[readTokens] method not implemented'));
   }
 
   public getSecret(): Promise<string> {
-    const key: Key = this.helper.datastore.key(['Secret', 'secret']);
+    const key: entity.Key = this.datastore.key([this.dataStoreKind, 'secret']);
     this.logger.debug('gcloud: [datastore getSecret] init');
 
-    return this.helper.datastore
+    return this.datastore
       .get(key)
       .then((data: object): string => {
         this.logger.trace({ data }, 'gcloud: [datastore getSecret] response @{data}');
@@ -98,7 +87,6 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioConfigGoogleStorage
           // @ts-ignore
           return null;
         }
-        // "{\"secret\":\"181bc38698078f880564be1e4d7ec107ac8a3b344a924c6d86cea4a84a885ae0\"}"
         return entities.secret;
       })
       .catch(
@@ -112,25 +100,50 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioConfigGoogleStorage
   }
 
   public setSecret(secret: string): Promise<CommitResponse> {
-    const key = this.helper.datastore.key(['Secret', 'secret']);
+    const key = this.datastore.key([this.dataStoreKind, 'secret']);
     const entity = {
       key,
       data: { secret },
     };
     this.logger.debug('gcloud: [datastore setSecret] added');
 
-    return this.helper.datastore.upsert(entity);
+    return this.datastore.upsert(entity);
+  }
+
+  public get(cb: Callback): void {
+    this.logger.debug('gcloud: [datastore get] init');
+
+    const query = this.datastore.createQuery(this.dataStoreKind);
+    this.logger.trace({ query }, 'gcloud: [datastore get] query @{query}');
+
+    this.helper.runQuery(query).then((data: RunQueryResponse): void => {
+      const response: object[] = data[0];
+
+      this.logger.trace({ response }, 'gcloud: [datastore get] query results @{response}');
+
+      const names = response.reduce((accumulator: string[], task: any): string[] => {
+        accumulator.push(task.name);
+        return accumulator;
+      }, []);
+
+      this.logger.trace({ names }, 'gcloud: [datastore get] names @{names}');
+      cb(null, names);
+    });
+  }
+
+  public search(onPackage: Callback, onEnd: Callback): void {
+    this.logger.warn('search method has not been implemented yet');
+    onEnd();
   }
 
   public add(name: string, cb: Callback): void {
-    const datastore = this.helper.datastore;
-    const key = datastore.key([this.kind, name]);
+    const key = this.datastore.key([this.dataStoreKind, name]);
     const data = {
       name: name,
     };
     this.logger.debug('gcloud: [datastore add] @{name} init');
 
-    datastore
+    this.datastore
       .save({
         key: key,
         data: data,
@@ -151,16 +164,6 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioConfigGoogleStorage
       });
   }
 
-  public async _deleteItem(name: string, item: any): Promise<void | Error> {
-    try {
-      const datastore = this.helper.datastore;
-      const key = datastore.key([this.kind, datastore.int(item.id)]);
-      await datastore.delete(key);
-    } catch (err) {
-      return getInternalError(err.message);
-    }
-  }
-
   public remove(name: string, cb: Callback): void {
     this.logger.debug('gcloud: [datastore remove] @{name} init');
 
@@ -175,7 +178,7 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioConfigGoogleStorage
     //   }
     // };
     this.helper
-      .getEntities(this.kind)
+      .getEntities(this.dataStoreKind)
       .then(
         async (entities: any): Promise<void> => {
           for (const item of entities) {
@@ -192,53 +195,13 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioConfigGoogleStorage
       });
   }
 
-  public get(cb: Callback): void {
-    this.logger.debug('gcloud: [datastore get] init');
-
-    const query = this.helper.datastore.createQuery(this.kind);
-    this.logger.trace({ query }, 'gcloud: [datastore get] query @{query}');
-
-    this.helper.runQuery(query).then((data: RunQueryResponse): void => {
-      const response: object[] = data[0];
-
-      this.logger.trace({ response }, 'gcloud: [datastore get] query results @{response}');
-
-      const names = response.reduce((accumulator: string[], task: any): string[] => {
-        accumulator.push(task.name);
-        return accumulator;
-      }, []);
-
-      this.logger.trace({ names }, 'gcloud: [datastore get] names @{names}');
-      cb(null, names);
-    });
-  }
-
-  public sync(): void {
-    this.logger.warn('synk method has not been implemented yet @{user}');
-  }
-
-  public getPackageStorage(packageInfo: string): IPackageStorageManager {
-    const { helper, config, logger } = this;
-
-    return new GoogleCloudStorageHandler(packageInfo, helper, config, logger);
-  }
-
-  private _createEmptyDatabase(): GoogleDataStorage {
-    const options: DatastoreOptions = this._getGoogleOptions(this.config);
-    const datastore = new Datastore(options);
-    const storage = new Storage(options);
-
-    const list: any = [];
-    const files: any = {};
-    const emptyDatabase = {
-      datastore,
-      storage,
-      list, // not used
-      files, // not used
-      secret: '',
-    };
-
-    return emptyDatabase;
+  public async _deleteItem(name: string, item: any): Promise<void | Error> {
+    try {
+      const key = this.datastore.key([this.dataStoreKind, this.datastore.int(item.id)]);
+      await this.datastore.delete(key);
+    } catch (err) {
+      return Promise.reject(getInternalError(err.message));
+    }
   }
 }
 
