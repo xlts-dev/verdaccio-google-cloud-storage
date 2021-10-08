@@ -1,4 +1,6 @@
-export interface VerdaccioGoogleStorageConfig{
+import { Config } from '@verdaccio/types';
+
+export interface VerdaccioGoogleStorageConfig extends Config {
   // Name of the bucket to store package files to.
   bucket: string;
   // The GCP project ID.
