@@ -140,65 +140,55 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioGoogleStorageConfig
 
   /**
    * Retrieve the full list of package names. Called when listing all packages from the web UI.
-   * @param {function} cb - A callback function that should be invoked with:
+   * @param {function} callback - A callback function that should be invoked with:
    *  - If an error is encountered: an error as the first argument.
    *  - If NO error is encountered: `null` as the first argument and an array of package names as the second argument.
    */
-  public get(cb: Callback): void {
-    this.logger.debug('gcloud: [datastore get] init');
-
+  public async get(callback: Callback): Promise<void> {
+    this.logger.debug('gcloud: [datastore get] start retrieving package list from gcp datastore');
     const query = this.datastore.createQuery(this.kindPackageStore);
-    this.logger.trace({ query }, 'gcloud: [datastore get] query @{query}');
+    this.logger.trace({ query }, 'gcloud: [datastore get] query: @{query}');
 
-    this.helper.runQuery(query).then((data: RunQueryResponse): void => {
-      const response: object[] = data[0]; // array of results
-      const pagingData = data[1]; // { moreResults: "NO_MORE_RESULTS", endCursor: "..." }
-
-      this.logger.trace({ response }, 'gcloud: [datastore get] query results @{response}');
-
-      const names = response.reduce((accumulator: string[], task: any): string[] => {
-        accumulator.push(task.name);
-        return accumulator;
-      }, []);
-
-      this.logger.trace({ names }, 'gcloud: [datastore get] names @{names}');
-      cb(null, names);
-    });
+    try {
+      const [packageEntities, pagingInfo] = await this.datastore.runQuery(query);
+      if (pagingInfo.moreResults !== Datastore.NO_MORE_RESULTS) {
+        // **NOTE**: According to the GCP docs the nodejs GCP Datastore client "will automatically paginate through all of the
+        // results that match a query". See: https://cloud.google.com/datastore/docs/concepts/queries#cursors_limits_and_offsets
+        this.logger.warn({ pagingInfo }, 'gcloud: [datastore get] not all results were returned from the query, this is not expected; pagingInfo: @{pagingInfo}');
+      }
+      this.logger.debug('gcloud: [datastore get] successfully retrieved package list from gcp datastore');
+      this.logger.trace({ packageEntities }, 'gcloud: [datastore get] packageEntities: @{packageEntities}');
+      callback(null, packageEntities.map(({ packageName }) => packageName).sort());
+    } catch (error: Error) {
+      this.logger.error({ error }, 'gcloud: [datastore get] error retrieving package list: @{error}');
+      callback(getInternalError(error.message))
+    }
   }
 
   /**
    * Add a new package name entry to the registry. Called when the `npm publish` command is run.
-   * @param {string} name - The name of the package being added.
-   * @param {function} cb - A callback function that should be invoked with:
+   * @param {string} packageName - The name of the package being added.
+   * @param {function} callback - A callback function that should be invoked with:
    *  - If an error is encountered: an error as the first argument.
-   *  - If NO error is encountered: `null` as the first argument.
+   *  - If NO error is encountered: a falsey value as the first argument.
    */
-  public add(name: string, cb: Callback): void {
-    const key = this.datastore.key([this.kindPackageStore, name]);
-    const data = {
-      name: name,
-    };
-    this.logger.debug('gcloud: [datastore add] @{name} init');
+  public async add(packageName: string, callback: Callback): Promise<void> {
+    this.logger.info({ packageName }, 'gcloud: [datastore add] start adding package @{packageName}');
+    const entity = {
+      key: this.datastore.key([this.kindPackageStore, packageName]),
+      data: { packageName },
+    }
+    this.logger.debug({ entity }, 'gcloud: [datastore add] adding entity: @{entity}');
 
-    this.datastore
-      .save({
-        key: key,
-        data: data,
-      })
-      .then((response: CommitResponse): void => {
-        const res = response[0];
-
-        this.logger.debug('gcloud: [datastore add] @{name} has been added');
-        this.logger.trace({ res }, 'gcloud: [datastore add] @{name} response: @{res}');
-
-        cb(null);
-      })
-      .catch((err: Error): void => {
-        const error: VerdaccioError = getInternalError(err.message);
-
-        this.logger.debug({ error }, 'gcloud: [datastore add] @{name} error @{error}');
-        cb(getInternalError(error.message));
-      });
+    try {
+      const result = await this.datastore.save(entity);
+      this.logger.info({ packageName }, 'gcloud: [datastore add] package @{packageName} has been added');
+      this.logger.trace({ packageName, result }, 'gcloud: [datastore add] package @{packageName} has been added: @{result}');
+      callback();
+    } catch (error: Error) {
+      this.logger.error({ packageName, error }, 'gcloud: [datastore add] error adding package @{packageName}: @{error}');
+      callback(getInternalError(error.message))
+    }
   }
 
   /**
@@ -206,7 +196,7 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioGoogleStorageConfig
    * @param {string} name - The name of the package being removed.
    * @param {function} cb - A callback function that should be invoked with:
    *  - If an error is encountered: an error as the first argument.
-   *  - If NO error is encountered: `null` as the first argument.
+   *  - If NO error is encountered: a falsey value as the first argument.
    */
   public remove(name: string, cb: Callback): void {
     this.logger.debug('gcloud: [datastore remove] @{name} init');
