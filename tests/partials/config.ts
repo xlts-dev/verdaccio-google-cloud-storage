@@ -1,6 +1,6 @@
-import { VerdaccioConfigGoogleStorage } from '../../src/types';
+import { VerdaccioGoogleStorageConfig } from '../../src/types';
 
-class Config implements VerdaccioConfigGoogleStorage {
+class Config implements VerdaccioGoogleStorageConfig {
   projectId: string;
   keyFilename: string;
   bucket: string;

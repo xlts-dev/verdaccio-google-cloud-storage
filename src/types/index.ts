@@ -1,19 +1,33 @@
-import { Datastore } from '@google-cloud/datastore';
-import { Config } from '@verdaccio/types';
-
-export interface VerdaccioConfigGoogleStorage extends Config {
-  // https://cloud.google.com/nodejs/docs/reference/storage/1.6.x/Bucket
+export interface VerdaccioGoogleStorageConfig{
+  // Name of the bucket to store package files to.
   bucket: string;
-  // TODO: add description
-  projectId?: string;
-  // https://cloud.google.com/datastore/docs/reference/data/rest/v1/Key
-  dataStoreKind?: string;
-  // for local development
-  keyFilename?: string;
-  // disable bucket validation
-  validation?: GoogleValidation;
-  /** Enable/disable resumable uploads to GC Storage */
-  resumable?: boolean;
+  // The GCP project ID.
+  // https://cloud.google.com/resource-manager/docs/creating-managing-projects
+  projectId: string;
+  // Absolute path to a GCP Key file to use. This should ONLY be used for local development.
+  // https://cloud.google.com/iam/docs/creating-managing-service-account-keys
+  keyFileName?: string;
+  // The name of the GCP Datastore kinds to use.
+  // https://cloud.google.com/datastore/docs/concepts/entities
+  kindNames?: VerdaccioGoogleStorageConfigKindNames;
+  // Options when interacting with GCP bucket.
+  bucketOptions?: VerdaccioGoogleStorageConfigBucketOptions;
 }
 
-export type GoogleValidation = boolean | string;
+export interface VerdaccioGoogleStorageConfigKindNames {
+  // The name of the `kind` to store package names to.
+  packages?: string;
+  // The name of the `kind` to store token metadata to.
+  tokens?: string;
+}
+
+export interface VerdaccioGoogleStorageConfigBucketOptions {
+  // The type of validation to perform when writing data to the storage bucket.
+  // https://cloud.google.com/storage/docs/hashes-etags
+  validation?: 'crc32c' | 'md5' | false;
+  // Whether resumable uploads are enabled for the storage bucket.
+  // Usually should be set to `false` due to the referenced stack overflow issue.
+  // https://stackoverflow.com/questions/53172050/google-cloud-storage-invalid-upload-request-error-bad-request
+  // https://cloud.google.com/storage/docs/resumable-uploads
+  resumable?: boolean;
+}

@@ -8,13 +8,13 @@ import { Logger, ILocalData, Callback, Package, IPackageStorage } from '@verdacc
 import { HTTP_STATUS, API_ERROR, VerdaccioError } from '@verdaccio/commons-api';
 
 import { pkgFileName } from '../src/storage';
-import { VerdaccioConfigGoogleStorage } from '../src/types';
+import { VerdaccioGoogleStorageConfig } from '../src/types';
 
 import storageConfig from './partials/config';
 import pkgExample from './partials/pkg';
 import { generatePackage } from './partials/utils.helpers';
 
-type ITestLocalData = ILocalData<VerdaccioConfigGoogleStorage>;
+type ITestLocalData = ILocalData<VerdaccioGoogleStorageConfig>;
 
 const logger: Logger = {
   error: jest.fn(),

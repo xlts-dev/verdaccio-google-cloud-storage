@@ -4,7 +4,7 @@ import { VerdaccioError } from '@verdaccio/commons-api';
 import { HTTP_STATUS } from '@verdaccio/commons-api/lib';
 
 import { ERROR_MISSING_CONFIG } from '../src/data-storage';
-import { VerdaccioConfigGoogleStorage } from '../src/types';
+import { VerdaccioGoogleStorageConfig } from '../src/types';
 
 import storageConfig from './partials/config';
 
@@ -43,7 +43,7 @@ describe('Google Cloud Storage', () => {
 
       test('should fails on create an instance due to bucket name invalid', () => {
         expect(() => {
-          const testConf: VerdaccioConfigGoogleStorage = _.clone(storageConfig);
+          const testConf: VerdaccioGoogleStorageConfig = _.clone(storageConfig);
           delete testConf.bucket;
 
           getCloudDatabase(testConf);
@@ -52,7 +52,7 @@ describe('Google Cloud Storage', () => {
 
       test('should fails on create an instance fails due projectId invalid', () => {
         expect(() => {
-          const testConf: VerdaccioConfigGoogleStorage = _.clone(storageConfig);
+          const testConf: VerdaccioGoogleStorageConfig = _.clone(storageConfig);
           delete testConf.projectId;
 
           getCloudDatabase(testConf);

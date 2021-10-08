@@ -2,7 +2,7 @@ import { Datastore, Query } from '@google-cloud/datastore';
 import { Bucket, File, Storage } from '@google-cloud/storage';
 import { RunQueryResponse } from '@google-cloud/datastore/build/src/query';
 
-import { VerdaccioConfigGoogleStorage } from './types';
+import { VerdaccioGoogleStorageConfig } from './types';
 
 export interface IStorageHelper {
   datastore: Datastore;
@@ -19,9 +19,9 @@ export interface IStorageHelper {
 export default class StorageHelper implements IStorageHelper {
   public datastore: Datastore;
   private storage: Storage;
-  private config: VerdaccioConfigGoogleStorage;
+  private config: VerdaccioGoogleStorageConfig;
 
-  public constructor(datastore: Datastore, storage: Storage, config: VerdaccioConfigGoogleStorage) {
+  public constructor(datastore: Datastore, storage: Storage, config: VerdaccioGoogleStorageConfig) {
     this.datastore = datastore;
     this.config = config;
     this.storage = storage;
