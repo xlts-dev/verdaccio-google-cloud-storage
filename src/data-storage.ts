@@ -1,19 +1,16 @@
 import { Storage } from '@google-cloud/storage';
 import { Datastore, DatastoreOptions } from '@google-cloud/datastore';
 import { CommitResponse } from '@google-cloud/datastore/build/src/request';
-import { RunQueryResponse } from '@google-cloud/datastore/build/src/query';
 import { entity } from '@google-cloud/datastore/build/src/entity';
-import { getServiceUnavailable, getInternalError, VerdaccioError } from '@verdaccio/commons-api';
+import { getServiceUnavailable, getInternalError, getNotFound, VerdaccioError } from '@verdaccio/commons-api';
 import { Logger, Callback, IPluginStorage, ITokenActions, Token, TokenFilter, IPackageStorageManager } from '@verdaccio/types';
 
 import { VerdaccioGoogleStorageConfig } from './types';
-import StorageHelper, { IStorageHelper } from './storage-helper';
 import GoogleCloudStorageHandler from './storage';
 
 export const ERROR_MISSING_CONFIG = 'Google cloud storage config missing. Add `store.google-cloud-storage` to your config file.';
 
 class GoogleCloudDatabase implements IPluginStorage<VerdaccioGoogleStorageConfig>, ITokenActions {
-  private helper: IStorageHelper;
   public logger: Logger;
   public config: VerdaccioGoogleStorageConfig;
   private readonly kindPackageStore: string;
@@ -39,7 +36,6 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioGoogleStorageConfig
     const storageOptions: DatastoreOptions = this._getGoogleStorageOptions(this.config);
     this.datastore = new Datastore(storageOptions);
     this.storage = new Storage(storageOptions);
-    this.helper = new StorageHelper(this.datastore, this.storage, this.config);
   }
 
   private _getGoogleStorageOptions(config: VerdaccioGoogleStorageConfig): DatastoreOptions {
@@ -57,8 +53,8 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioGoogleStorageConfig
   }
 
   public getPackageStorage(packageInfo: string): IPackageStorageManager {
-    const { helper, config, logger } = this;
-    return new GoogleCloudStorageHandler(packageInfo, helper, config, logger);
+    const { config, logger } = this;
+    return new GoogleCloudStorageHandler(packageInfo, this.storage, config, logger);
   }
 
   public saveToken(token: Token): Promise<void> {
@@ -150,7 +146,7 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioGoogleStorageConfig
     this.logger.trace({ query }, 'gcloud: [datastore get] query: @{query}');
 
     try {
-      const [packageEntities, pagingInfo] = await this.datastore.runQuery(query);
+      const [packageEntities, pagingInfo] = await this.datastore.runQuery(query, { gaxOptions: { autoPaginate: true } });
       if (pagingInfo.moreResults !== Datastore.NO_MORE_RESULTS) {
         // **NOTE**: According to the GCP docs the nodejs GCP Datastore client "will automatically paginate through all of the
         // results that match a query". See: https://cloud.google.com/datastore/docs/concepts/queries#cursors_limits_and_offsets
@@ -159,9 +155,9 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioGoogleStorageConfig
       this.logger.debug('gcloud: [datastore get] successfully retrieved package list from gcp datastore');
       this.logger.trace({ packageEntities }, 'gcloud: [datastore get] packageEntities: @{packageEntities}');
       callback(null, packageEntities.map(({ packageName }) => packageName).sort());
-    } catch (error: Error) {
+    } catch (error: any) {
       this.logger.error({ error }, 'gcloud: [datastore get] error retrieving package list: @{error}');
-      callback(getInternalError(error.message))
+      callback(getInternalError(error.message));
     }
   }
 
@@ -183,58 +179,46 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioGoogleStorageConfig
     try {
       const result = await this.datastore.save(entity);
       this.logger.info({ packageName }, 'gcloud: [datastore add] package @{packageName} has been added');
-      this.logger.trace({ packageName, result }, 'gcloud: [datastore add] package @{packageName} has been added: @{result}');
+      this.logger.debug({ packageName, result }, 'gcloud: [datastore add] package @{packageName} has been added: @{result}');
       callback();
-    } catch (error: Error) {
+    } catch (error: any) {
       this.logger.error({ packageName, error }, 'gcloud: [datastore add] error adding package @{packageName}: @{error}');
-      callback(getInternalError(error.message))
+      callback(getInternalError(error.message));
     }
   }
 
   /**
    * Remove a package name entry from the registry. Called when the `npm unpublish --force` command is run.
-   * @param {string} name - The name of the package being removed.
-   * @param {function} cb - A callback function that should be invoked with:
+   * @param {string} packageName - The name of the package being removed.
+   * @param {function} callback - A callback function that should be invoked with:
    *  - If an error is encountered: an error as the first argument.
    *  - If NO error is encountered: a falsey value as the first argument.
    */
-  public remove(name: string, cb: Callback): void {
-    this.logger.debug('gcloud: [datastore remove] @{name} init');
+  public async remove(packageName: string, callback: Callback): Promise<void> {
+    this.logger.info({ packageName }, 'gcloud: [datastore remove] start removing package @{packageName}');
+    const key = this.datastore.key([this.kindPackageStore, packageName]);
+    this.logger.debug({ key }, 'gcloud: [datastore remove] checking for entity with key: @{key}');
 
-    // const deletedItems: any = [];
-    // const sanityCheck = (deletedItems: any): null | Error => {
-    //   if (typeof deletedItems === 'undefined' || deletedItems.length === 0 || deletedItems[0][0].indexUpdates === 0) {
-    //     return getNotFound('trying to remove a package that does not exist');
-    //   } else if (deletedItems[0][0].indexUpdates > 0) {
-    //     return null;
-    //   } else {
-    //     return getInternalError('this should not happen');
-    //   }
-    // };
-    this.helper
-      .getEntities(this.kindPackageStore)
-      .then(
-        async (entities: any): Promise<void> => {
-          for (const item of entities) {
-            if (item.name === name) {
-              await this._deleteItem(name, item);
-              // deletedItems.push(deletedItem);
-            }
-          }
-          cb(null);
-        }
-      )
-      .catch((err: Error): void => {
-        cb(getInternalError(err.message));
-      });
-  }
-
-  public async _deleteItem(name: string, item: any): Promise<void | Error> {
+    // Check to ensure that the package requested to be removed actually exists. If it does not, provide a 404 not found error response.
     try {
-      const key = this.datastore.key([this.kindPackageStore, this.datastore.int(item.id)]);
-      await this.datastore.delete(key);
-    } catch (err) {
-      return Promise.reject(getInternalError(err.message));
+      const [entity] = await this.datastore.get(key);
+      if (!entity) {
+        this.logger.warn({ packageName }, 'gcloud: [datastore remove] package @{packageName} was not found');
+        return callback(getNotFound(`package '${packageName}' was not found`));
+      }
+    } catch (error: any) {
+      this.logger.error({ packageName, error }, 'gcloud: [datastore remove] error checking for existing package @{packageName}: @{error}');
+      return callback(getInternalError(error.message));
+    }
+
+    try {
+      const result = await this.datastore.delete(key);
+      this.logger.info({ packageName }, 'gcloud: [datastore remove] package @{packageName} has been removed');
+      this.logger.debug({ packageName, result }, 'gcloud: [datastore remove] package @{packageName} has been removed: @{result}');
+      callback();
+    } catch (error: any) {
+      this.logger.error({ packageName, error }, 'gcloud: [datastore remove] error removing package @{packageName}: @{error}');
+      return callback(getInternalError(error.message));
     }
   }
 }
