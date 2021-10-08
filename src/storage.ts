@@ -24,7 +24,7 @@ import {
 import { Response } from 'request';
 
 import { IStorageHelper } from './storage-helper';
-import { VerdaccioConfigGoogleStorage } from './types';
+import { VerdaccioGoogleStorageConfig } from './types';
 
 export const pkgFileName = 'package.json';
 export const defaultValidation = 'crc32c';
@@ -34,13 +34,13 @@ const packageAlreadyExist = function(name: string): VerdaccioError {
 };
 
 class GoogleCloudStorageHandler implements IPackageStorageManager {
-  public config: VerdaccioConfigGoogleStorage;
+  public config: VerdaccioGoogleStorageConfig;
   public logger: Logger;
   private key: string;
   private helper: IStorageHelper;
   private name: string;
 
-  public constructor(name: string, helper: IStorageHelper, config: VerdaccioConfigGoogleStorage, logger: Logger) {
+  public constructor(name: string, helper: IStorageHelper, config: VerdaccioGoogleStorageConfig, logger: Logger) {
     this.name = name;
     this.logger = logger;
     this.helper = helper;
@@ -176,13 +176,13 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
         const file = this.helper.buildFilePath(name, pkgFileName);
         try {
           await file.save(this._convertToString(metadata), {
-            validation: this.config.validation || defaultValidation,
+            validation: this.config?.bucketOptions?.validation || defaultValidation,
             /**
              * When resumable is `undefined` - it will default to `true`as per GC Storage documentation:
              * `Resumable uploads are automatically enabled and must be shut off explicitly by setting options.resumable to false`
              * @see https://cloud.google.com/nodejs/docs/reference/storage/2.5.x/File#createWriteStream
              */
-            resumable: this.config.resumable,
+            resumable: this.config?.bucketOptions?.resumable,
           });
           resolve(null);
         } catch (err) {
@@ -266,7 +266,7 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
             const file = this.helper.getBucket().file(`${this.name}/${name}`);
             this.logger.info({ url: file.name }, 'gcloud: the @{url} is being uploaded to the storage');
             const fileStream = file.createWriteStream({
-              validation: this.config.validation || defaultValidation,
+              validation: this.config?.bucketOptions?.validation || defaultValidation,
             });
             uploadStream.done = (): void => {
               uploadStream.on('end', (): void => {

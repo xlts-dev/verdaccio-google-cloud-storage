@@ -6,21 +6,22 @@ import { entity } from '@google-cloud/datastore/build/src/entity';
 import { getServiceUnavailable, getInternalError, VerdaccioError } from '@verdaccio/commons-api';
 import { Logger, Callback, IPluginStorage, ITokenActions, Token, TokenFilter, IPackageStorageManager } from '@verdaccio/types';
 
-import { VerdaccioConfigGoogleStorage } from './types';
+import { VerdaccioGoogleStorageConfig } from './types';
 import StorageHelper, { IStorageHelper } from './storage-helper';
 import GoogleCloudStorageHandler from './storage';
 
 export const ERROR_MISSING_CONFIG = 'Google cloud storage config missing. Add `store.google-cloud-storage` to your config file.';
 
-class GoogleCloudDatabase implements IPluginStorage<VerdaccioConfigGoogleStorage>, ITokenActions {
+class GoogleCloudDatabase implements IPluginStorage<VerdaccioGoogleStorageConfig>, ITokenActions {
   private helper: IStorageHelper;
   public logger: Logger;
-  public config: VerdaccioConfigGoogleStorage;
-  private readonly dataStoreKind: string;
+  public config: VerdaccioGoogleStorageConfig;
+  private readonly kindPackageStore: string;
+  private readonly kindTokenStore: string;
   private readonly datastore: Datastore;
   private readonly storage: Storage;
 
-  public constructor(config: VerdaccioConfigGoogleStorage, options: any) {
+  public constructor(config: VerdaccioGoogleStorageConfig, options: any) {
     switch (true as boolean) {
       case !config:
         throw new Error(ERROR_MISSING_CONFIG);
@@ -32,7 +33,8 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioConfigGoogleStorage
 
     this.config = config;
     this.logger = options.logger;
-    this.dataStoreKind = config.dataStoreKind || 'VerdaccioDataStore';
+    this.kindPackageStore = config?.kindNames?.packages || 'VerdaccioPackage';
+    this.kindTokenStore = config?.kindNames?.tokens || 'VerdaccioToken'
 
     const storageOptions: DatastoreOptions = this._getGoogleStorageOptions(this.config);
     this.datastore = new Datastore(storageOptions);
@@ -40,7 +42,7 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioConfigGoogleStorage
     this.helper = new StorageHelper(this.datastore, this.storage, this.config);
   }
 
-  private _getGoogleStorageOptions(config: VerdaccioConfigGoogleStorage): DatastoreOptions {
+  private _getGoogleStorageOptions(config: VerdaccioGoogleStorageConfig): DatastoreOptions {
     const storageOptions: DatastoreOptions = {
       projectId: config.projectId
     };
@@ -74,8 +76,12 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioConfigGoogleStorage
     return Promise.reject(getServiceUnavailable('[readTokens] method not implemented'));
   }
 
+  /**
+   * Retrieve the JWT signing/verification secret from storage.
+   * @returns {Promise<string>} - The JWT signing/verification secret.
+   */
   public getSecret(): Promise<string> {
-    const key: entity.Key = this.datastore.key([this.dataStoreKind, 'secret']);
+    const key: entity.Key = this.datastore.key(['Secret', 'secret']);
     this.logger.debug('gcloud: [datastore getSecret] init');
 
     return this.datastore
@@ -99,8 +105,12 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioConfigGoogleStorage
       );
   }
 
+  /**
+   * Persist the JWT signing/verification secret to storage.
+   * @param {string} secret - The secret string to persist to storage.
+   */
   public setSecret(secret: string): Promise<CommitResponse> {
-    const key = this.datastore.key([this.dataStoreKind, 'secret']);
+    const key = this.datastore.key(['Secret', 'secret']);
     const entity = {
       key,
       data: { secret },
@@ -110,14 +120,39 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioConfigGoogleStorage
     return this.datastore.upsert(entity);
   }
 
+  /**
+   * @typedef {Object} onPackageItem - The metadata object to pass to the search `onPackage` callback function parameter.
+   * @property {string} name - The name of the package.
+   * @property {string} path - The path to the package within the storage system being used.
+   * @property {number} time - The millisecond timestamp of when the package was last modified.
+   */
+  /**
+   * Provides package metadata information for each package in the registry. Invoked when the `npm search` command is run.
+   * TODO: This needs to be implemented if package searching is to be supported.
+   * @param {function} onPackage - A callback function that should be invoked for each package in the registry.
+   *  The argument passed to this function should be a {onPackageItem} object.
+   * @param {function} onEnd - A callback function that should be invoked when no more packages are available.
+   */
+  public search(onPackage: Callback, onEnd: Callback): void {
+    this.logger.warn('package search method has not been implemented yet');
+    onEnd();
+  }
+
+  /**
+   * Retrieve the full list of package names. Called when listing all packages from the web UI.
+   * @param {function} cb - A callback function that should be invoked with:
+   *  - If an error is encountered: an error as the first argument.
+   *  - If NO error is encountered: `null` as the first argument and an array of package names as the second argument.
+   */
   public get(cb: Callback): void {
     this.logger.debug('gcloud: [datastore get] init');
 
-    const query = this.datastore.createQuery(this.dataStoreKind);
+    const query = this.datastore.createQuery(this.kindPackageStore);
     this.logger.trace({ query }, 'gcloud: [datastore get] query @{query}');
 
     this.helper.runQuery(query).then((data: RunQueryResponse): void => {
-      const response: object[] = data[0];
+      const response: object[] = data[0]; // array of results
+      const pagingData = data[1]; // { moreResults: "NO_MORE_RESULTS", endCursor: "..." }
 
       this.logger.trace({ response }, 'gcloud: [datastore get] query results @{response}');
 
@@ -131,13 +166,15 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioConfigGoogleStorage
     });
   }
 
-  public search(onPackage: Callback, onEnd: Callback): void {
-    this.logger.warn('search method has not been implemented yet');
-    onEnd();
-  }
-
+  /**
+   * Add a new package name entry to the registry. Called when the `npm publish` command is run.
+   * @param {string} name - The name of the package being added.
+   * @param {function} cb - A callback function that should be invoked with:
+   *  - If an error is encountered: an error as the first argument.
+   *  - If NO error is encountered: `null` as the first argument.
+   */
   public add(name: string, cb: Callback): void {
-    const key = this.datastore.key([this.dataStoreKind, name]);
+    const key = this.datastore.key([this.kindPackageStore, name]);
     const data = {
       name: name,
     };
@@ -164,6 +201,13 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioConfigGoogleStorage
       });
   }
 
+  /**
+   * Remove a package name entry from the registry. Called when the `npm unpublish --force` command is run.
+   * @param {string} name - The name of the package being removed.
+   * @param {function} cb - A callback function that should be invoked with:
+   *  - If an error is encountered: an error as the first argument.
+   *  - If NO error is encountered: `null` as the first argument.
+   */
   public remove(name: string, cb: Callback): void {
     this.logger.debug('gcloud: [datastore remove] @{name} init');
 
@@ -178,7 +222,7 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioConfigGoogleStorage
     //   }
     // };
     this.helper
-      .getEntities(this.dataStoreKind)
+      .getEntities(this.kindPackageStore)
       .then(
         async (entities: any): Promise<void> => {
           for (const item of entities) {
@@ -197,7 +241,7 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioConfigGoogleStorage
 
   public async _deleteItem(name: string, item: any): Promise<void | Error> {
     try {
-      const key = this.datastore.key([this.dataStoreKind, this.datastore.int(item.id)]);
+      const key = this.datastore.key([this.kindPackageStore, this.datastore.int(item.id)]);
       await this.datastore.delete(key);
     } catch (err) {
       return Promise.reject(getInternalError(err.message));
