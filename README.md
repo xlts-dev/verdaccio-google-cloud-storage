@@ -4,40 +4,50 @@
 The source code for this project is based on: https://github.com/verdaccio/monorepo/tree/v10.0.6/plugins/google-cloud
 and implements missing functionality from the official Verdaccio maintained `google-cloud` storage plugin.
 
-### Requirements
-* Google Cloud Platform Account
-* Google Cloud Platform project that is using [Google Firestore in Datastore mode](https://cloud.google.com/firestore/docs/firestore-or-datastore)
-* Service account with 'Cloud Datastore Owner' role and read/write access to the storage bucket
-* Verdaccio server (see below)
+## Requirements
+* Google Cloud Platform Account.
+* Google Cloud Platform project that is using [Google Firestore in Datastore mode](https://cloud.google.com/firestore/docs/firestore-or-datastore).
+* Service account with ability to:
+  * read and write to the Verdaccio storage bucket.
+  * read and write to the Verdaccio Datastores.
+  * read the JWT signing secret stored in secrets manager.
 
-### Configuration
+## Configuration
 Complete configuration example:
 ```yaml
 store:
-  google-cloud:
-   ## google project id
-   projectId: project-01 || env (GOOGLE_CLOUD_VERDACCIO_PROJECT_ID)
+  google-cloud-storage:
+    ## Google Cloud Platform Project ID.
+    projectId: xlts-dev-staging
 
-   ## The namespace for metadata database. Defaults to 'VerdaccioDataStore'.
-   # kind: someRandomMetadataDatabaseKey
+    ## Optional. Google Cloud Platform only recommends using this file for development.
+    # keyFileName: /absolute/path/to/key/file
 
-   ## This plugin does not create the bucket. It has to already exist.
-   bucket: my-bucket-name
+    ## Mandatory. Name of the GCP Bucket to store packages to.
+    ## This plugin does not create the bucket. It has to already exist.
+    bucketName: xlts-dev-staging-verdaccio-storage
 
-   ## Google Cloud Platform only recommends using this file for development.
-   ## This field is optional.
-   # keyFilename: /path/project-01.json || env (GOOGLE_CLOUD_VERDACCIO_KEY)
+    ## The name of the GCP Secret Manager JWT signing secret.
+    ## This plugin does not create the secret. It has to already exist.
+    secretName: 'verdaccio-jwt-secret'
 
-   ## The default validation is crc32c. It can be overridden using the
-   ## https://googleapis.dev/nodejs/storage/latest/global.html#CreateWriteStreamOptions
-   ## of https://googleapis.dev/nodejs/storage/latest/File.html#createWriteStream
-   # validation: crc32c
+    ## Optional. Name of the GCP Datastore `kind`s to store entities to.
+    # kindNames:
+      ## Optional. Name of the `kind` to store package names to. Defaults to 'VerdaccioPackage'.
+      # packages: VerdaccioPackage
+      ## Optional. Name of the `kind` to store token metadata to. Defaults to 'VerdaccioPackage'.
+      # tokens: VerdaccioToken
 
-   ## Enable/disable resumable uploads to GC Storage
-   ## By default it's enabled in `@google-cloud/storage`.
-   ## This may cause failures for small package uploads so it is recommended to set it to `false`.
-   ## @see https://stackoverflow.com/questions/53172050/google-cloud-storage-invalid-upload-request-error-bad-request
-   resumable: false
+    ## Optional. Specific options when interacting with GCP Bucket storage.
+    bucketOptions:
+      ## Optional. The type of validation to use when performing write operations. Defaults to 'crc32c'. See:
+      ## https://googleapis.dev/nodejs/storage/latest/global.html#CreateWriteStreamOptions
+      # validation: crc32c
+      ## Enable/disable resumable uploads to GCP Bucket storage
+      ## The `@google-cloud/storage` SDK enables this by default.
+      ## This may cause failures for small package uploads, so it is recommended to set this value to `false`.
+      ## @see https://stackoverflow.com/questions/53172050/google-cloud-storage-invalid-upload-request-error-bad-request
+      resumable: false
 ```
 
 ## License

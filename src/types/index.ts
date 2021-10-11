@@ -1,14 +1,16 @@
 import { Config } from '@verdaccio/types';
 
 export interface VerdaccioGoogleStorageConfig extends Config {
-  // Name of the bucket to store package files to.
-  bucket: string;
   // The GCP project ID.
   // https://cloud.google.com/resource-manager/docs/creating-managing-projects
   projectId: string;
   // Absolute path to a GCP Key file to use. This should ONLY be used for local development.
   // https://cloud.google.com/iam/docs/creating-managing-service-account-keys
   keyFileName?: string;
+  // Name of the bucket to store package files to.
+  bucketName: string;
+  // The name of the GCP Secret Manager JWT signing secret.
+  secretName?: string;
   // The name of the GCP Datastore kinds to use.
   // https://cloud.google.com/datastore/docs/concepts/entities
   kindNames?: VerdaccioGoogleStorageConfigKindNames;

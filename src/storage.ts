@@ -52,7 +52,7 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
   }
 
   public _getBucket(): Bucket {
-    return this.storage.bucket(this.config.bucket);
+    return this.storage.bucket(this.config.bucketName);
   }
 
   public updatePackage(
