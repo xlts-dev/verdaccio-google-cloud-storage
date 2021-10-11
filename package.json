@@ -29,8 +29,9 @@
     "node": ">=8"
   },
   "dependencies": {
-    "@google-cloud/datastore": "^6.5.0",
-    "@google-cloud/storage": "^5.14.8",
+    "@google-cloud/datastore": "6.5.0",
+    "@google-cloud/secret-manager": "3.10.1",
+    "@google-cloud/storage": "5.15.0",
     "@verdaccio/commons-api": "10.0.1",
     "@verdaccio/streams": "10.0.0"
   },

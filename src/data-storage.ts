@@ -1,55 +1,59 @@
 import { Storage } from '@google-cloud/storage';
-import { Datastore, DatastoreOptions } from '@google-cloud/datastore';
-import { CommitResponse } from '@google-cloud/datastore/build/src/request';
-import { entity } from '@google-cloud/datastore/build/src/entity';
-import { getServiceUnavailable, getInternalError, getNotFound, VerdaccioError } from '@verdaccio/commons-api';
+import { Datastore } from '@google-cloud/datastore';
+import { SecretManagerServiceClient } from '@google-cloud/secret-manager';
+import { ClientOptions } from 'google-gax/build/src/clientInterface';
+import { getServiceUnavailable, getInternalError, getNotFound } from '@verdaccio/commons-api';
 import { Logger, Callback, IPluginStorage, ITokenActions, Token, TokenFilter, IPackageStorageManager } from '@verdaccio/types';
 
 import { VerdaccioGoogleStorageConfig } from './types';
 import GoogleCloudStorageHandler from './storage';
+
 
 export const ERROR_MISSING_CONFIG = 'Google cloud storage config missing. Add `store.google-cloud-storage` to your config file.';
 
 class GoogleCloudDatabase implements IPluginStorage<VerdaccioGoogleStorageConfig>, ITokenActions {
   public logger: Logger;
   public config: VerdaccioGoogleStorageConfig;
+  private cachedJwtSecret: string | null = null;
   private readonly kindPackageStore: string;
   private readonly kindTokenStore: string;
   private readonly datastore: Datastore;
   private readonly storage: Storage;
+  private readonly secretManager: SecretManagerServiceClient;
 
   public constructor(config: VerdaccioGoogleStorageConfig, options: any) {
     switch (true as boolean) {
       case !config:
         throw new Error(ERROR_MISSING_CONFIG);
-      case !config.bucket || typeof config.bucket !== 'string':
+      case !config.bucketName || typeof config.bucketName !== 'string':
         throw new Error('Google Cloud Storage requires a bucket name, please define one.');
-      case !config.projectId || typeof config.projectId !== 'string':
-        throw new Error('Google Cloud Storage requires a projectId.');
+      case !config.secretName || typeof config.secretName !== 'string':
+        throw new Error('Google Cloud Storage requires a secret name, please define one.');
     }
 
     this.config = config;
     this.logger = options.logger;
     this.kindPackageStore = config?.kindNames?.packages || 'VerdaccioPackage';
-    this.kindTokenStore = config?.kindNames?.tokens || 'VerdaccioToken'
+    this.kindTokenStore = config?.kindNames?.tokens || 'VerdaccioToken';
 
-    const storageOptions: DatastoreOptions = this._getGoogleStorageOptions(this.config);
-    this.datastore = new Datastore(storageOptions);
-    this.storage = new Storage(storageOptions);
+    const clientOptions: ClientOptions = this._getGoogleClientOptions(this.config);
+    this.datastore = new Datastore(clientOptions);
+    this.storage = new Storage(clientOptions);
+    this.secretManager = new SecretManagerServiceClient(clientOptions);
   }
 
-  private _getGoogleStorageOptions(config: VerdaccioGoogleStorageConfig): DatastoreOptions {
-    const storageOptions: DatastoreOptions = {
+  private _getGoogleClientOptions(config: VerdaccioGoogleStorageConfig): ClientOptions {
+    const clientOptions: ClientOptions = {
       projectId: config.projectId
     };
 
     if (config.keyFileName) {
-      storageOptions.keyFilename = config.keyFileName;
-      this.logger.warn('Using credentials in a file might be un-secure and is only recommended for local development');
+      clientOptions.keyFilename = config.keyFileName;
+      this.logger.warn('using credentials in a file might be insecure and is only recommended for local development');
     }
 
-    this.logger.warn({ content: JSON.stringify(storageOptions) }, 'Google storage settings: @{content}');
-    return storageOptions;
+    this.logger.info(`google client options: ${JSON.stringify(clientOptions)}`);
+    return clientOptions;
   }
 
   public getPackageStorage(packageInfo: string): IPackageStorageManager {
@@ -73,47 +77,40 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioGoogleStorageConfig
   }
 
   /**
-   * Retrieve the JWT signing/verification secret from storage.
+   * Retrieve the JWT signing/verification secret from storage and cache it. If the secret has been previously retrieved, return
+   * the cached value in order to reduce unnecessary API requests. The secret value is NOT expected to change.
    * @returns {Promise<string>} - The JWT signing/verification secret.
    */
-  public getSecret(): Promise<string> {
-    const key: entity.Key = this.datastore.key(['Secret', 'secret']);
-    this.logger.debug('gcloud: [datastore getSecret] init');
+  public async getSecret(): Promise<string> {
+    if (this.cachedJwtSecret) {
+      this.logger.debug('gcloud: [datastore getSecret] using cached secret value');
+      return this.cachedJwtSecret;
+    }
+    this.logger.info(`gcloud: [datastore getSecret] start retrieving jwt signing secret '${this.config.secretName}'`);
 
-    return this.datastore
-      .get(key)
-      .then((data: object): string => {
-        this.logger.trace({ data }, 'gcloud: [datastore getSecret] response @{data}');
-        const entities = data[0];
-        if (!entities) {
-          // @ts-ignore
-          return null;
-        }
-        return entities.secret;
-      })
-      .catch(
-        (err: Error): Promise<string> => {
-          const error: VerdaccioError = getInternalError(err.message);
-
-          this.logger.warn({ error }, 'gcloud: [datastore getSecret] init error @{error}');
-          return Promise.reject(getServiceUnavailable('[getSecret] permissions error'));
-        }
-      );
+    try {
+      const [secret] = await this.secretManager.accessSecretVersion({ name: this.config.secretName });
+      this.logger.info(`gcloud: [datastore getSecret] successfully retrieved jwt signing secret '${this.config.secretName}'`)
+      if (!secret?.payload?.data) {
+        this.logger.error(`gcloud: [datastore getSecret] jwt signing secret '${this.config.secretName}' does not have a value`);
+        throw new Error(`JWT signing secret '${this.config.secretName}' does not have a value`);
+      }
+      const secretValue = secret.payload.data.toString()
+      this.cachedJwtSecret = secretValue;
+      return secretValue;
+    } catch (error: any) {
+      this.logger.error(`gcloud: [datastore getSecret] error retrieving jwt signing secret  '${this.config.secretName}': ${error.message}`);
+      throw error;
+    }
   }
 
   /**
-   * Persist the JWT signing/verification secret to storage.
+   * Persist the JWT signing/verification secret to storage. This method has purposefully been disabled in the GCP storage plugin.
+   * The JWT signing secret should be created outside this plugin.
    * @param {string} secret - The secret string to persist to storage.
    */
-  public setSecret(secret: string): Promise<CommitResponse> {
-    const key = this.datastore.key(['Secret', 'secret']);
-    const entity = {
-      key,
-      data: { secret },
-    };
-    this.logger.debug('gcloud: [datastore setSecret] added');
-
-    return this.datastore.upsert(entity);
+  public async setSecret(secret: string): Promise<void> {
+    this.logger.warn('persistence of jwt signing secret has been disabled');
   }
 
   /**
@@ -130,7 +127,7 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioGoogleStorageConfig
    * @param {function} onEnd - A callback function that should be invoked when no more packages are available.
    */
   public search(onPackage: Callback, onEnd: Callback): void {
-    this.logger.warn('package search method has not been implemented yet');
+    this.logger.warn('package search method has not been implemented');
     onEnd();
   }
 
@@ -141,22 +138,22 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioGoogleStorageConfig
    *  - If NO error is encountered: `null` as the first argument and an array of package names as the second argument.
    */
   public async get(callback: Callback): Promise<void> {
-    this.logger.debug('gcloud: [datastore get] start retrieving package list from gcp datastore');
+    this.logger.debug(`gcloud: [datastore get] start retrieving package list from gcp datastore '${this.kindPackageStore}'`);
     const query = this.datastore.createQuery(this.kindPackageStore);
-    this.logger.trace({ query }, 'gcloud: [datastore get] query: @{query}');
+    this.logger.trace(`gcloud: [datastore get] query: ${JSON.stringify(query)}`);
 
     try {
       const [packageEntities, pagingInfo] = await this.datastore.runQuery(query, { gaxOptions: { autoPaginate: true } });
       if (pagingInfo.moreResults !== Datastore.NO_MORE_RESULTS) {
         // **NOTE**: According to the GCP docs the nodejs GCP Datastore client "will automatically paginate through all of the
         // results that match a query". See: https://cloud.google.com/datastore/docs/concepts/queries#cursors_limits_and_offsets
-        this.logger.warn({ pagingInfo }, 'gcloud: [datastore get] not all results were returned from the query, this is not expected; pagingInfo: @{pagingInfo}');
+        this.logger.warn(`gcloud: [datastore get] not all results were returned from the query, this is not expected; pagingInfo: ${JSON.stringify(pagingInfo)}`);
       }
-      this.logger.debug('gcloud: [datastore get] successfully retrieved package list from gcp datastore');
-      this.logger.trace({ packageEntities }, 'gcloud: [datastore get] packageEntities: @{packageEntities}');
+      this.logger.debug(`gcloud: [datastore get] successfully retrieved package list from gcp datastore '${this.kindPackageStore}'`);
+      this.logger.trace(`gcloud: [datastore get] packageEntities: ${JSON.stringify(packageEntities)}`);
       callback(null, packageEntities.map(({ packageName }) => packageName).sort());
     } catch (error: any) {
-      this.logger.error({ error }, 'gcloud: [datastore get] error retrieving package list: @{error}');
+      this.logger.error(`gcloud: [datastore get] error retrieving package list from gcp datastore '${this.kindPackageStore}': ${error.message}`);
       callback(getInternalError(error.message));
     }
   }
@@ -169,20 +166,19 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioGoogleStorageConfig
    *  - If NO error is encountered: a falsey value as the first argument.
    */
   public async add(packageName: string, callback: Callback): Promise<void> {
-    this.logger.info({ packageName }, 'gcloud: [datastore add] start adding package @{packageName}');
+    this.logger.info(`gcloud: [datastore add] start adding package '${packageName}' to gcp datastore '${this.kindPackageStore}'`);
     const entity = {
       key: this.datastore.key([this.kindPackageStore, packageName]),
       data: { packageName },
     }
-    this.logger.debug({ entity }, 'gcloud: [datastore add] adding entity: @{entity}');
+    this.logger.debug(`gcloud: [datastore add] adding entity: ${JSON.stringify(entity)}`);
 
     try {
-      const result = await this.datastore.save(entity);
-      this.logger.info({ packageName }, 'gcloud: [datastore add] package @{packageName} has been added');
-      this.logger.debug({ packageName, result }, 'gcloud: [datastore add] package @{packageName} has been added: @{result}');
+      await this.datastore.save(entity);
+      this.logger.info(`gcloud: [datastore add] successfully added package '${packageName}' to gcp datastore '${this.kindPackageStore}'`);
       callback();
     } catch (error: any) {
-      this.logger.error({ packageName, error }, 'gcloud: [datastore add] error adding package @{packageName}: @{error}');
+      this.logger.error(`gcloud: [datastore add] failed to add package '${packageName}' to gcp datastore '${this.kindPackageStore}': ${error.message}`);
       callback(getInternalError(error.message));
     }
   }
@@ -195,29 +191,28 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioGoogleStorageConfig
    *  - If NO error is encountered: a falsey value as the first argument.
    */
   public async remove(packageName: string, callback: Callback): Promise<void> {
-    this.logger.info({ packageName }, 'gcloud: [datastore remove] start removing package @{packageName}');
+    this.logger.info(`gcloud: [datastore remove] start removing package '${packageName}' from gcp datastore '${this.kindPackageStore}'`);
     const key = this.datastore.key([this.kindPackageStore, packageName]);
-    this.logger.debug({ key }, 'gcloud: [datastore remove] checking for entity with key: @{key}');
+    this.logger.debug(`gcloud: [datastore remove] checking for entity with key: ${JSON.stringify(key)}`);
 
     // Check to ensure that the package requested to be removed actually exists. If it does not, provide a 404 not found error response.
     try {
       const [entity] = await this.datastore.get(key);
       if (!entity) {
-        this.logger.warn({ packageName }, 'gcloud: [datastore remove] package @{packageName} was not found');
+        this.logger.warn(`gcloud: [datastore remove] package '${packageName}' was not found in gcp datastore '${this.kindPackageStore}'`);
         return callback(getNotFound(`package '${packageName}' was not found`));
       }
     } catch (error: any) {
-      this.logger.error({ packageName, error }, 'gcloud: [datastore remove] error checking for existing package @{packageName}: @{error}');
+      this.logger.error(`gcloud: [datastore remove] error checking for existing package '${packageName}' in gcp datastore '${this.kindPackageStore}': ${error.message}`);
       return callback(getInternalError(error.message));
     }
 
     try {
-      const result = await this.datastore.delete(key);
-      this.logger.info({ packageName }, 'gcloud: [datastore remove] package @{packageName} has been removed');
-      this.logger.debug({ packageName, result }, 'gcloud: [datastore remove] package @{packageName} has been removed: @{result}');
+      await this.datastore.delete(key);
+      this.logger.info(`gcloud: [datastore remove] successfully removed package '${packageName}' from gcp datastore '${this.kindPackageStore}'`);
       callback();
     } catch (error: any) {
-      this.logger.error({ packageName, error }, 'gcloud: [datastore remove] error removing package @{packageName}: @{error}');
+      this.logger.error(`gcloud: [datastore remove] failed to remove package '${packageName}' from gcp datastore '${this.kindPackageStore}': ${error.message}`);
       return callback(getInternalError(error.message));
     }
   }
