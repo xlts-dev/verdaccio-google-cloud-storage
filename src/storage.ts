@@ -21,7 +21,6 @@ import {
   getConflict,
   HTTP_STATUS,
 } from '@verdaccio/commons-api';
-import { Response } from 'request';
 
 import { VerdaccioGoogleStorageConfig } from './types';
 
@@ -32,6 +31,7 @@ const packageAlreadyExist = function(name: string): VerdaccioError {
   return getConflict(`${name} package already exist`);
 };
 
+// TODO: This file needs to get cleaned up in general
 class GoogleCloudStorageHandler implements IPackageStorageManager {
   public config: VerdaccioGoogleStorageConfig;
   public logger: Logger;
@@ -107,8 +107,7 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
     try {
       file
         .delete()
-        // @ts-ignore
-        .then((_data: [Response]): void => {
+        .then((): void => {
           this.logger.debug({ name: file.name }, 'gcloud: @{name} was deleted successfully from storage');
           cb(null);
         })
@@ -243,7 +242,7 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
   }
 
   private async _readPackage(name: string): Promise<Package> {
-    return new Promise(
+    return new Promise<Package>(
       async (resolve, reject): Promise<void> => {
         const file = this._buildFilePath(name, pkgFileName);
 

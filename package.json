@@ -1,6 +1,6 @@
 {
   "name": "verdaccio-google-cloud-storage",
-  "version": "10.0.1",
+  "version": "10.0.0",
   "description": "Google Cloud storage implementation for Verdaccio",
   "keywords": [
     "verdaccio",
@@ -10,23 +10,27 @@
     "datastore"
   ],
   "author": "Juan Picado <juanpicado19@gmail.com>",
+  "contributors": [{
+    "name": "Ed Clement",
+    "email": "ed.clement@devintent.com",
+    "url": "https://github.com/edclement"
+  }],
   "license": "MIT",
   "homepage": "https://verdaccio.org",
   "repository": {
     "type": "git",
-    "url": "https://github.com/verdaccio/monorepo",
-    "directory": "plugins/google-cloud"
+    "url": "https://github.com/xlts-dev/verdaccio-google-cloud-storage"
   },
   "bugs": {
-    "url": "https://github.com/verdaccio/monorepo/issues"
+    "url": "https://github.com/xlts-dev/verdaccio-google-cloud-storage/issues"
   },
-  "main": "src/index.ts",
+  "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "files": [
     "lib/"
   ],
   "engines": {
-    "node": ">=8"
+    "node": ">=12"
   },
   "dependencies": {
     "@google-cloud/datastore": "6.5.0",
@@ -36,24 +40,30 @@
     "@verdaccio/streams": "10.0.0"
   },
   "devDependencies": {
+    "@types/jest": "26.0.24",
+    "@types/node": "14.14.31",
+    "@verdaccio/babel-preset": "10.0.0",
+    "@verdaccio/eslint-config": "10.0.0",
     "@verdaccio/types": "10.0.0",
-    "memory-fs": "0.5.0"
+    "babel-eslint": "10.1.0",
+    "cross-env": "7.0.3",
+    "eslint": "6.8.0",
+    "jest": "26.0.1",
+    "lint-staged": "9.5.0",
+    "prettier": "1.19.1",
+    "typescript": "3.9.10"
   },
   "optionalDependencies": {
     "fast-crc32c": "1.0.7"
   },
   "scripts": {
-    "clean": "rimraf ./build",
-    "test": "cross-env NODE_ENV=test BABEL_ENV=test jest",
-    "type-check": "tsc --noEmit -p tsconfig.build.json",
-    "build:types": "tsc --emitDeclarationOnly -p tsconfig.build.json",
-    "build:js": "babel src/ --out-dir lib/ --copy-files --extensions \".ts,.tsx\" --source-maps",
-    "watch": "pnpm build:js -- --watch",
-    "build": "pnpm run build:js && pnpm run build:types"
-  },
-  "snyk": true,
-  "funding": {
-    "type": "opencollective",
-    "url": "https://opencollective.com/verdaccio"
+    "build": "npm run build:types && npm run build:js",
+    "build:js": "babel src/ --out-dir lib --extensions \".ts,.tsx\" --source-maps inline",
+    "build:types": "tsc --emitDeclarationOnly",
+    "coverage:publish": "codecov --root=../../ -F plugins",
+    "lint": "eslint \"**/*.{js,ts}\"",
+    "test": " jest --env node --config ./jest.config.js",
+    "type-check": "tsc --noEmit",
+    "type-check:watch": "npm run type-check -- --watch"
   }
 }
