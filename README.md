@@ -8,9 +8,18 @@ and implements missing functionality from the official Verdaccio maintained `goo
 * Google Cloud Platform Account.
 * Google Cloud Platform project that is using [Google Firestore in Datastore mode](https://cloud.google.com/firestore/docs/firestore-or-datastore).
 * Service account with ability to:
-  * read and write to the Verdaccio storage bucket.
-  * read and write to the Verdaccio Datastores.
-  * read the JWT signing secret stored in secrets manager.
+  * read and write to the Verdaccio GCP Storage Bucket.
+  * read and write to the Verdaccio GCP Datastores.
+  * read the JWT signing secret stored in GCP Secrets Manager.
+
+## TODO
+The following items still need to be addressed:
+- [ ] Implement the `search` method in `storage.ts` that allows the `npm search <string>` command to work against the
+  registry.
+- [ ] Fix unit tests. Unit tests have are busted since refactoring the code to clean up `storage.ts` and add missing
+  token methods: `saveToken`, `deleteToken`, and `readTokens`.
+- [ ] Fix `npm run build:types` script. It fails in the [original monorepo](https://github.com/verdaccio/monorepo/tree/v10.0.6/plugins/google-cloud) as well.
+- [ ] Update dev dependencies. Many of them are out of date and have `high` vulnerability warnings.
 
 ## Configuration
 Complete configuration example:
@@ -27,7 +36,7 @@ store:
     ## This plugin does not create the bucket. It has to already exist.
     bucketName: xlts-dev-staging-verdaccio-storage
 
-    ## The name of the GCP Secret Manager JWT signing secret.
+    ## Mandatory. The name of the GCP Secret Manager JWT signing secret.
     ## This plugin does not create the secret. It has to already exist.
     secretName: 'verdaccio-jwt-secret'
 

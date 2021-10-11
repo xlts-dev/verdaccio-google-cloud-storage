@@ -1,5 +1,4 @@
 {
-  "extends": "../../tsconfig.reference.json",
   "compilerOptions": {
     "target": "esnext",
     "module": "commonjs",
@@ -10,24 +9,13 @@
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "typeRoots": [
-      "../../node_modules/@verdaccio/types/lib/verdaccio",
-      "../../node_modules/@types",
-      "../../node_modules/@google-cloud"
+      "./node_modules/@verdaccio/types/lib/verdaccio",
+      "./node_modules/@types",
+      "./node_modules/@google-cloud"
     ]
   },
   "include": [
     "src/*.ts",
     "types/*.d.ts"
-  ],
-  "references": [
-    {
-      "path": "../../core/commons-api"
-    },
-    {
-      "path": "../../core/streams"
-    },
-    {
-      "path": "../../core/types"
-    }
   ]
 }
