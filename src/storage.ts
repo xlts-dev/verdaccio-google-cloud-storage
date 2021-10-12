@@ -1,5 +1,4 @@
 import { Readable } from 'stream';
-
 import { UploadTarball, ReadTarball } from '@verdaccio/streams';
 import {
   Package,
@@ -24,8 +23,9 @@ import {
 
 import { VerdaccioGoogleStorageConfig } from './types';
 
-export const pkgFileName = 'package.json';
-export const defaultValidation = 'crc32c';
+export const PACKAGE_JSON = 'package.json';
+export const DEFAULT_VALIDATION = 'crc32c';
+export const PACKAGE_CACHE_TTL_SECONDS = 30;
 
 const packageAlreadyExist = function(name: string): VerdaccioError {
   return getConflict(`${name} package already exist`);
@@ -36,19 +36,18 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
   public config: VerdaccioGoogleStorageConfig;
   public logger: Logger;
   private storage: Storage;
-  private key: string;
-  private name: string;
+  private static packageJsonCache = {};
+  private readonly name: string;
 
   public constructor(name: string, storage: Storage, config: VerdaccioGoogleStorageConfig, logger: Logger) {
     this.name = name;
     this.storage = storage;
     this.logger = logger;
     this.config = config;
-    this.key = 'VerdaccioMetadataStore';
   }
 
-  public _buildFilePath(name: string, fileName: string): File {
-    return this._getBucket().file(`${name}/${fileName}`);
+  public _buildFilePath(packageName: string, fileName: string): File {
+    return this._getBucket().file(`${packageName}/${fileName}`);
   }
 
   public _getBucket(): Bucket {
@@ -147,7 +146,7 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
 
   public createPackage(name: string, metadata: Package, cb: CallbackAction): void {
     this.logger.debug({ name }, 'gcloud: creating new package for @{name}');
-    this._fileExist(name, pkgFileName).then(
+    this._fileExist(name, PACKAGE_JSON).then(
       (exist: boolean): void => {
         if (exist) {
           this.logger.debug({ name }, 'gcloud: creating @{name} has failed, it already exist');
@@ -181,10 +180,10 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
   private _savePackage(name: string, metadata: Package): Promise<null | VerdaccioError> {
     return new Promise(
       async (resolve, reject): Promise<void> => {
-        const file = this._buildFilePath(name, pkgFileName);
+        const file = this._buildFilePath(name, PACKAGE_JSON);
         try {
           await file.save(this._convertToString(metadata), {
-            validation: this.config?.bucketOptions?.validation || defaultValidation,
+            validation: this.config?.bucketOptions?.validation || DEFAULT_VALIDATION,
             /**
              * When resumable is `undefined` - it will default to `true`as per GC Storage documentation:
              * `Resumable uploads are automatically enabled and must be shut off explicitly by setting options.resumable to false`
@@ -205,20 +204,54 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
     return JSON.stringify(value, null, '\t');
   }
 
-  public readPackage(name: string, cb: ReadPackageCallback): void {
-    this.logger.debug({ name }, 'gcloud: reading package for @{name}');
-    this._readPackage(name)
-      .then((json: Package): void => {
-        this.logger.debug({ name }, 'gcloud: package @{name} was fetched from storage');
-        cb(null, json);
-      })
-      .catch((err: Error): void => {
-        this.logger.debug({ name: name, err: err.message }, 'gcloud: read package @{name} has failed err: @{err}');
-        cb(err);
-      });
+
+  /**
+   * Retrieve the package.json for a specific package from GCP storage bucket.
+   * @param {string} packageName - The name of the package to retrieve the package.json file for.
+   * @param {ReadPackageCallback} callback - The callback to call with the package.json object or a VerdaccioError object.
+   */
+  public readPackage(packageName: string, callback: ReadPackageCallback): void {
+    this.logger.debug(`gcloud: [readPackage] start retrieving '${PACKAGE_JSON}' file for package '${packageName}'`);
+    this._readPackage(packageName)
+      .then((packageJson) => callback(null, packageJson))
+      .catch((error) => callback(getNotFound(`failed retrieving '${PACKAGE_JSON}' file for package '${packageName}' from storage`)));
   }
 
-  /* eslint-disable no-async-promise-executor */
+  /**
+   * Retrieve the package.json for a specific package from GCP storage bucket. The package.json files are cached for
+   * a small period of time in memory since Verdaccio has a tendency to make duplicate requests to read the package.json
+   * file for packages depending on the operation being performed.
+   * @param {string} packageName - The name of the package to retrieve the package.json file for.
+   * @returns {Object} - The package.json parsed to an object.
+   * @private
+   */
+  private async _readPackage(packageName: string): Promise<Package> {
+    this.logger.debug(`gcloud: [_readPackage] start retrieving '${PACKAGE_JSON}' file for package '${packageName}'`);
+
+    const cachedPackageJson = GoogleCloudStorageHandler.packageJsonCache[packageName];
+    if (cachedPackageJson && cachedPackageJson.timestamp > new Date().getTime() - (PACKAGE_CACHE_TTL_SECONDS * 1000)) {
+      const { content } = await cachedPackageJson;
+      const packageJson: Package = JSON.parse(content[0].toString('utf8'));
+      this.logger.info(`gcloud: [_readPackage] providing '${PACKAGE_JSON}' file for package '${packageName}' from CACHE`);
+      return packageJson;
+    }
+
+    const file = this._buildFilePath(packageName, PACKAGE_JSON);
+    try {
+      const fileDownloadPromise = file.download();
+      GoogleCloudStorageHandler.packageJsonCache[packageName] = { timestamp: new Date().getTime(), content: fileDownloadPromise };
+      const content: DownloadResponse = await fileDownloadPromise;
+      this.logger.info(`gcloud: [_readPackage] successfully retrieved '${PACKAGE_JSON}' file for package '${packageName}' from storage`);
+      const packageJson: Package = JSON.parse(content[0].toString('utf8'));
+      this.logger.trace(`gcloud: [_readPackage] '${PACKAGE_JSON}' file for package '${packageName}': ${JSON.stringify(packageJson)}`)
+      GoogleCloudStorageHandler.packageJsonCache[packageName] = { timestamp: new Date().getTime(), content: content };
+      return packageJson
+    } catch (error) {
+      this.logger.error(`gcloud: [_readPackage] failed retrieving '${PACKAGE_JSON}' file for package '${packageName}' from storage: ${error.message}`);
+      throw error;
+    }
+  }
+
   private _fileExist(name: string, fileName: string): Promise<boolean> {
     return new Promise(
       async (resolve, reject): Promise<void> => {
@@ -240,25 +273,6 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
       }
     );
   }
-
-  private async _readPackage(name: string): Promise<Package> {
-    return new Promise<Package>(
-      async (resolve, reject): Promise<void> => {
-        const file = this._buildFilePath(name, pkgFileName);
-
-        try {
-          const content: DownloadResponse = await file.download();
-          this.logger.debug({ name: this.name }, 'gcloud: @{name} was found on storage');
-          const response: Package = JSON.parse(content[0].toString('utf8'));
-
-          resolve(response);
-        } catch (err) {
-          this.logger.debug({ name: this.name }, 'gcloud: @{name} package not found on storage');
-          reject(getNotFound());
-        }
-      }
-    );
-  }
   /* eslint-disable no-async-promise-executor */
 
   public writeTarball(name: string): UploadTarball {
@@ -274,7 +288,7 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
             const file =this._getBucket().file(`${this.name}/${name}`);
             this.logger.info({ url: file.name }, 'gcloud: the @{url} is being uploaded to the storage');
             const fileStream = file.createWriteStream({
-              validation: this.config?.bucketOptions?.validation || defaultValidation,
+              validation: this.config?.bucketOptions?.validation || DEFAULT_VALIDATION,
             });
             uploadStream.done = (): void => {
               uploadStream.on('end', (): void => {
