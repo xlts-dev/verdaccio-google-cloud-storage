@@ -12,6 +12,40 @@ and implements missing functionality from the official Verdaccio maintained `goo
   * read and write to the Verdaccio GCP Datastores.
   * read the JWT signing secret stored in GCP Secrets Manager.
 
+### GCP Project Service Account Permissions
+The below permissions (JSON format) should be attached to the Verdaccio Service Account when running command:
+```bash
+gcloud projects get-iam-policy <PROJECT_NAME> --format=json
+```
+```json
+{
+  "bindings": [
+    {
+      "role": "roles/datastore.user",
+      "members": ["serviceAccount:<SERVICE_ACCOUNT_NAME>"]
+    },
+    {
+      "role": "roles/storage.objectAdmin",
+      "members": ["serviceAccount:<SERVICE_ACCOUNT_NAME>"],
+      "condition": {
+        "title": "Verdaccio Bucket",
+        "description": "Allow access only to bucket '<VERDACCIO_BUCKET>'",
+        "expression": "resource.name.startsWith(\"projects/_/buckets/<VERDACCIO_BUCKET>\")"
+      }
+    },
+    {
+      "role": "roles/secretmanager.secretAccessor",
+      "members": ["serviceAccount:<SERVICE_ACCOUNT_NAME>"],
+      "condition": {
+        "title": "Verdaccio Secret",
+        "description": "Allow access only to secret '<VERDACCIO_SECRET>'",
+        "expression": "resource.name.startsWith(\"projects/<PROJECT_NUMBER>/secrets/<VERDACCIO_SECRET>\")"
+      }
+    }
+  ]
+}
+```
+
 ## TODO
 The following items still need to be addressed:
 - [ ] Implement the `search` method in `storage.ts` that allows the `npm search <string>` command to work against the
@@ -26,19 +60,19 @@ Complete configuration example:
 ```yaml
 store:
   google-cloud-storage:
-    ## Google Cloud Platform Project ID.
-    projectId: xlts-dev-staging
+    ## Mandatory. Google Cloud Platform Project ID.
+    projectId: name-of-your-project
 
     ## Optional. Google Cloud Platform only recommends using this file for development.
     # keyFileName: /absolute/path/to/key/file
 
     ## Mandatory. Name of the GCP Bucket to store packages to.
     ## This plugin does not create the bucket. It has to already exist.
-    bucketName: xlts-dev-staging-verdaccio-storage
+    bucketName: name-of-the-bucket
 
     ## Mandatory. The name of the GCP Secret Manager JWT signing secret.
     ## This plugin does not create the secret. It has to already exist.
-    secretName: 'verdaccio-jwt-secret'
+    secretName: 'name-of-the-secret'
 
     ## Optional. Name of the GCP Datastore `kind`s to store entities to.
     # kindNames:
