@@ -8,8 +8,7 @@ import { Logger, Callback, IPluginStorage, ITokenActions, Token, TokenFilter, IP
 import { VerdaccioGoogleStorageConfig } from './types';
 import GoogleCloudStorageHandler from './storage';
 
-
-export const ERROR_MISSING_CONFIG = 'Google cloud storage config missing. Add `store.google-cloud-storage` to your config file.';
+export const ERROR_MISSING_CONFIG = 'Google cloud Storage config missing. Add `store.google-cloud-storage` to your config file.';
 
 class GoogleCloudDatabase implements IPluginStorage<VerdaccioGoogleStorageConfig>, ITokenActions {
   public logger: Logger;
@@ -25,9 +24,11 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioGoogleStorageConfig
     switch (true as boolean) {
       case !config:
         throw new Error(ERROR_MISSING_CONFIG);
-      case !config.bucketName || typeof config.bucketName !== 'string':
+      case !config.bucketName:
+      case typeof config.bucketName !== 'string':
         throw new Error('Google Cloud Storage requires a bucket name, please define one.');
-      case !config.secretName || typeof config.secretName !== 'string':
+      case !config.secretName:
+      case typeof config.secretName !== 'string':
         throw new Error('Google Cloud Storage requires a secret name, please define one.');
     }
 
