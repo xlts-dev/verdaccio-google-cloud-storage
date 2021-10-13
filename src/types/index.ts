@@ -10,7 +10,7 @@ export interface VerdaccioGoogleStorageConfig extends Config {
   // Name of the bucket to store package files to.
   bucketName: string;
   // The name of the GCP Secret Manager JWT signing secret.
-  secretName?: string;
+  secretName: string;
   // The name of the GCP Datastore kinds to use.
   // https://cloud.google.com/datastore/docs/concepts/entities
   kindNames?: VerdaccioGoogleStorageConfigKindNames;
