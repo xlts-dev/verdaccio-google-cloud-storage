@@ -206,7 +206,7 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
 
 
   /**
-   * Retrieve the package.json for a specific package from GCP storage bucket.
+   * Retrieve the package.json for a specific package from the GCS bucket.
    * @param {string} packageName - The name of the package to retrieve the package.json file for.
    * @param {ReadPackageCallback} callback - The callback to call with the package.json object or a VerdaccioError object.
    */
@@ -218,7 +218,7 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
   }
 
   /**
-   * Retrieve the package.json for a specific package from GCP storage bucket. The package.json files are cached for
+   * Retrieve the package.json for a specific package from the GCS bucket. The package.json files are cached for
    * a small period of time in memory since Verdaccio has a tendency to make duplicate requests to read the package.json
    * file for packages depending on the operation being performed.
    * @param {string} packageName - The name of the package to retrieve the package.json file for.
@@ -282,11 +282,11 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
       this._fileExist(this.name, name).then(
         (exist: boolean): void => {
           if (exist) {
-            this.logger.debug({ url: this.name }, 'gcloud:  @{url} package already exist on storage');
+            this.logger.debug({ url: this.name }, 'gcloud:  @{url} package already exists in the storage bucket');
             uploadStream.emit('error', packageAlreadyExist(name));
           } else {
             const file =this._getBucket().file(`${this.name}/${name}`);
-            this.logger.info({ url: file.name }, 'gcloud: the @{url} is being uploaded to the storage');
+            this.logger.info({ url: file.name }, 'gcloud: the @{url} is being uploaded to the storage bucket');
             const fileStream = file.createWriteStream({
               validation: this.config?.bucketOptions?.validation || DEFAULT_VALIDATION,
             });
@@ -341,7 +341,7 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
 
   public readTarball(name: string): ReadTarball {
     const localReadStream: ReadTarball = new ReadTarball({});
-    const file: File =this._getBucket().file(`${this.name}/${name}`);
+    const file: File = this._getBucket().file(`${this.name}/${name}`);
     const bucketStream: Readable = file.createReadStream();
     this.logger.debug({ url: file.name }, 'gcloud: reading tarball from @{url}');
 
