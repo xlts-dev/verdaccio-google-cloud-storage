@@ -8,7 +8,7 @@ import { Logger, Callback, IPluginStorage, ITokenActions, Token, TokenFilter, IP
 import { VerdaccioGoogleStorageConfig } from './types';
 import GoogleCloudStorageHandler from './storage';
 
-export const ERROR_MISSING_CONFIG = 'Google cloud Storage config missing. Add `store.google-cloud-storage` to your config file.';
+export const ERROR_MISSING_CONFIG = 'GCS config missing. Add `store.google-cloud-storage` to your config file.';
 
 class GoogleCloudDatabase implements IPluginStorage<VerdaccioGoogleStorageConfig>, ITokenActions {
   public logger: Logger;
@@ -96,7 +96,9 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioGoogleStorageConfig
     const key = this.datastore.key([this.kindTokenStore, tokenKey]);
     this.logger.debug(`gcloud: [datastore deleteToken] checking for entity with key: ${JSON.stringify(key)}`);
 
-    // Check to ensure that the package requested to be removed actually exists. If it does not, provide a 404 not found error response.
+    // Check to ensure that the package requested to be removed actually exists. If it does not, throw an error.
+    // NOTE: by the time this code is reached the token should have been confirmed to exist as the `readTokens` method is called first and Verdaccio checks
+    //   to ensure the token exists before the `deleteToken` method is called. This is just an extra safeguard.
     try {
       const [entity] = await this.datastore.get(key);
       if (!entity) {
@@ -146,8 +148,8 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioGoogleStorageConfig
   }
 
   /**
-   * Retrieve the JWT signing/verification secret from storage and cache it. If the secret has been previously retrieved, return
-   * the cached value in order to reduce unnecessary API requests. The secret value is NOT expected to change.
+   * Retrieve the JWT signing/verification secret from Secret Manager and cache it. If the secret has been previously retrieved,
+   * return the cached value in order to reduce unnecessary API requests. The secret value is NOT expected to change.
    * @returns {Promise<string>} - The JWT signing/verification secret.
    */
   public async getSecret(): Promise<string> {
@@ -200,7 +202,7 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioGoogleStorageConfig
    * @returns {Promise<void>}
    */
   public async search(onPackage: Callback, onEnd: Callback): Promise<void> {
-    this.logger.warn('package search method has not been implemented');
+    this.logger.warn('package search has not been implemented');
     onEnd();
   }
 
