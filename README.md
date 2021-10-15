@@ -1,5 +1,5 @@
 # verdaccio-google-cloud-storage
-☁️📦 Google Cloud storage plugin for verdaccio
+☁️📦 Google Cloud storage plugin for Verdaccio.
 
 The source code for this project started based on: https://github.com/verdaccio/monorepo/tree/v10.0.6/plugins/google-cloud
 and implements missing functionality from the official Verdaccio maintained `google-cloud` storage plugin.
@@ -11,6 +11,31 @@ and implements missing functionality from the official Verdaccio maintained `goo
   * read and write to the Verdaccio GCS Bucket.
   * read and write to Cloud Firestore in Datastore mode.
   * read the JWT signing secret stored in GCP Secret Manager.
+
+## Installation
+Verdaccio loads storage plugins in a very specific manner where the name of the plugin under the `storage` property of
+the `config.yaml` needs to line up exactly with the folder the plugin resides in under the `plugins` folder configuration
+value that is configured in the same `config.yaml` file.
+
+So, when Verdaccio sees this configuration in the `config.yaml` file:
+```yaml
+# path to the plugins directory
+plugins: /verdaccio/plugins
+
+store:
+  google-cloud-storage: {} # assume the rest of the `@xlts.dev/verdaccio-google-cloud-store` config is present
+```
+
+Verdaccio will look for the plugin at this path: `/verdaccio/plugins/verdaccio-google-cloud-storage`. Verdaccio 
+**automatically adds** the `verdaccio-` prefix to the directory path when looking for the plugin. Assuming the Verdaccio
+`plugins` directory has been configured to `/verdaccio/plugins`, the below commands can be used to install the
+`@xlts.dev/verdaccio-google-cloud-store` plugin:
+```bash
+mkdir /tmp/verdaccio-plugin
+cd /tmp/verdaccio-plugin
+npm install --global-style --no-bin-links --no-optional verdaccio-google-cloud-storage@npm:@xlts.dev/verdaccio-google-cloud-storage
+mv node_modules/verdaccio-google-cloud-storage /verdaccio/plugins
+```
 
 ### GCP Project Service Account Permissions
 The below permissions (JSON format) should be attached to the Verdaccio Service Account when running command:

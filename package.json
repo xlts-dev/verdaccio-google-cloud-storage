@@ -1,5 +1,5 @@
 {
-  "name": "verdaccio-google-cloud-storage",
+  "name": "@xlts.dev/verdaccio-google-cloud-storage",
   "version": "0.1.0",
   "description": "Google Cloud storage implementation for Verdaccio",
   "keywords": [
@@ -33,9 +33,9 @@
     "node": ">=12"
   },
   "dependencies": {
-    "@google-cloud/datastore": "6.5.0",
+    "@google-cloud/datastore": "6.6.0",
     "@google-cloud/secret-manager": "3.10.1",
-    "@google-cloud/storage": "5.15.0",
+    "@google-cloud/storage": "5.15.3",
     "@verdaccio/commons-api": "10.0.1",
     "@verdaccio/streams": "10.0.0"
   },
