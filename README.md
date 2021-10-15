@@ -69,7 +69,7 @@ store:
     # kindNames:
       ## Optional. Name of the `kind` to store package names to. Defaults to 'VerdaccioPackage'.
       # packages: VerdaccioPackage
-      ## Optional. Name of the `kind` to store token metadata to. Defaults to 'VerdaccioPackage'.
+      ## Optional. Name of the `kind` to store token metadata to. Defaults to 'VerdaccioToken'.
       # tokens: VerdaccioToken
 
     ## Optional. Specific options when interacting with GCP Bucket storage.
