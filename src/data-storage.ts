@@ -96,7 +96,7 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioGoogleStorageConfig
     const key = this.datastore.key([this.kindTokenStore, tokenKey]);
     this.logger.debug(`gcloud: [datastore deleteToken] checking for entity with key: ${JSON.stringify(key)}`);
 
-    // Check to ensure that the package requested to be removed actually exists. If it does not, throw an error.
+    // Check to ensure that the token requested to be removed actually exists. If it does not, throw an error.
     // NOTE: by the time this code is reached the token should have been confirmed to exist as the `readTokens` method is called first and Verdaccio checks
     //   to ensure the token exists before the `deleteToken` method is called. This is just an extra safeguard.
     try {
@@ -178,7 +178,7 @@ class GoogleCloudDatabase implements IPluginStorage<VerdaccioGoogleStorageConfig
   }
 
   /**
-   * Persist the JWT signing/verification secret to storage. This method has purposefully been disabled in the GCP storage plugin.
+   * Persist the JWT signing/verification secret to Secret Manager. This method has purposefully been disabled in this plugin.
    * The JWT signing secret should be created outside this plugin.
    * @param {string} secret - The secret string to persist to storage.
    * @returns {Promise<void>}
