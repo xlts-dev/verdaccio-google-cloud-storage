@@ -107,6 +107,7 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
       file
         .delete()
         .then((): void => {
+          GoogleCloudStorageHandler.packageJsonCache = {}; // clear the package.json cache
           this.logger.debug({ name: file.name }, 'gcloud: @{name} was deleted successfully from storage');
           cb(null);
         })
@@ -131,6 +132,7 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
     this.logger.debug({ name: file.name }, 'gcloud: removing the package @{name} from storage');
     file.delete().then(
       (): void => {
+        GoogleCloudStorageHandler.packageJsonCache = {}; // clear the package.json cache
         this.logger.debug({ name: file.name }, 'gcloud: package @{name} was deleted successfully from storage');
         callback(null);
       },
@@ -167,6 +169,7 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
     this.logger.debug({ name }, 'gcloud: saving package for @{name}');
     this._savePackage(name, value)
       .then((): void => {
+        GoogleCloudStorageHandler.packageJsonCache = {}; // clear the package.json cache
         this.logger.debug({ name }, 'gcloud: @{name} has been saved successfully on storage');
         cb(null);
       })
@@ -230,7 +233,7 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
 
     const cachedPackageJson = GoogleCloudStorageHandler.packageJsonCache[packageName];
     if (cachedPackageJson && cachedPackageJson.timestamp > new Date().getTime() - (PACKAGE_CACHE_TTL_SECONDS * 1000)) {
-      const { content } = await cachedPackageJson;
+      const content = await cachedPackageJson.content;
       const packageJson: Package = JSON.parse(content[0].toString('utf8'));
       this.logger.info(`gcloud: [_readPackage] providing '${PACKAGE_JSON}' file for package '${packageName}' from CACHE`);
       return packageJson;
