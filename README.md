@@ -26,7 +26,7 @@ store:
   google-cloud-storage: {} # assume the rest of the `@xlts.dev/verdaccio-google-cloud-store` config is present
 ```
 
-Verdaccio will look for the plugin at this path: `/verdaccio/plugins/verdaccio-google-cloud-storage`. Verdaccio 
+Verdaccio will look for the plugin at this path: `/verdaccio/plugins/verdaccio-google-cloud-storage`. Verdaccio
 **automatically adds** the `verdaccio-` prefix to the directory path when looking for the plugin. Assuming the Verdaccio
 `plugins` directory has been configured to `/verdaccio/plugins`, the below commands can be used to install the
 `@xlts.dev/verdaccio-google-cloud-store` plugin:
@@ -96,7 +96,9 @@ store:
       # packages: VerdaccioPackage
       ## Optional. Name of the `kind` to store token metadata to. Defaults to 'VerdaccioToken'.
       # tokens: VerdaccioToken
-
+      ## Optional. The namespace to store entities in.
+      # namespace: [default]
+      
     ## Optional. Specific options when interacting with GCP Bucket storage.
     bucketOptions:
       ## Optional. The type of validation to use when performing write operations. Defaults to 'crc32c'. See:
