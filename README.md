@@ -97,7 +97,7 @@ store:
       ## Optional. Name of the `kind` to store token metadata to. Defaults to 'VerdaccioToken'.
       # tokens: VerdaccioToken
       ## Optional. The namespace to store entities in.
-      # namespace: [default]
+      # namespace: default
       
     ## Optional. Specific options when interacting with GCP Bucket storage.
     bucketOptions:

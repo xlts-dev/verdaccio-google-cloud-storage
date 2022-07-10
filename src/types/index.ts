@@ -24,7 +24,7 @@ export interface VerdaccioGoogleStorageConfigKindNames {
   // The name of the `kind` to store token metadata to.
   tokens?: string;
   // The namespace to store entities in.
-  namespace?: string | undefined;
+  namespace?: string;
 }
 
 export interface VerdaccioGoogleStorageConfigBucketOptions {
