@@ -49,6 +49,7 @@
     "cross-env": "7.0.3",
     "eslint": "6.8.0",
     "jest": "26.0.1",
+    "@playwright/test": "^1.30.0",
     "lint-staged": "9.5.0",
     "prettier": "1.19.1",
     "typescript": "3.9.10"
@@ -63,6 +64,8 @@
     "coverage:publish": "codecov --root=../../ -F plugins",
     "lint": "eslint \"**/*.{js,ts}\"",
     "test": " jest --env node --config ./jest.config.js",
+    "e2e": "playwright test",
+    "e2e:debug": "playwright test --project chromium --headed",
     "type-check": "tsc --noEmit",
     "type-check:watch": "npm run type-check -- --watch"
   }
