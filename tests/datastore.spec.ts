@@ -26,9 +26,7 @@ describe('Google Cloud Storage', () => {
 
   const getCloudDatabase = (storageConfig, logger = loggerDefault): any => {
     const GoogleCloudDatabase = require('../src/index').default;
-    const cloudDatabase = new GoogleCloudDatabase(storageConfig, { logger });
-
-    return cloudDatabase;
+    return new GoogleCloudDatabase(storageConfig, { logger });
   };
 
   describe('Google Cloud DataStore', () => {
@@ -44,7 +42,7 @@ describe('Google Cloud Storage', () => {
       test('should fails on create an instance due to bucket name invalid', () => {
         expect(() => {
           const testConf: VerdaccioGoogleStorageConfig = _.clone(storageConfig);
-          delete testConf.bucket;
+          delete testConf.bucketName;
 
           getCloudDatabase(testConf);
         }).toThrow(new Error('Google Cloud Storage requires a bucket name, please define one.'));
@@ -53,10 +51,10 @@ describe('Google Cloud Storage', () => {
       test('should fails on create an instance fails due projectId invalid', () => {
         expect(() => {
           const testConf: VerdaccioGoogleStorageConfig = _.clone(storageConfig);
-          delete testConf.projectId;
+          delete testConf.secretName;
 
           getCloudDatabase(testConf);
-        }).toThrow(new Error('Google Cloud Storage requires a ProjectId.'));
+        }).toThrow(new Error('Google Cloud Storage requires a secret name, please define one.'));
       });
 
       test('should fails on config is not to be provided', () => {
@@ -71,8 +69,8 @@ describe('Google Cloud Storage', () => {
 
       test('should add an Entity', done => {
         // ** add, remove, get, getPackageStorage
-        jest.doMock('../src/storage-helper', () => {
-          const originalModule = jest.requireActual('../src/storage-helper').default;
+        jest.doMock('../src/storage', () => {
+          const originalModule = jest.requireActual('../src/storage').default;
 
           return {
             __esModule: true,
@@ -115,8 +113,8 @@ describe('Google Cloud Storage', () => {
 
       test('should fails add an Entity', done => {
         // ** add, remove, get, getPackageStorage
-        jest.doMock('../src/storage-helper', () => {
-          const originalModule = jest.requireActual('../src/storage-helper').default;
+        jest.doMock('../src/storage', () => {
+          const originalModule = jest.requireActual('../src/storage').default;
 
           return {
             __esModule: true,
@@ -154,8 +152,8 @@ describe('Google Cloud Storage', () => {
       test('should delete an entity', done => {
         const deleteDataStore = jest.fn();
 
-        jest.doMock('../src/storage-helper', () => {
-          const originalModule = jest.requireActual('../src/storage-helper').default;
+        jest.doMock('../src/storage', () => {
+          const originalModule = jest.requireActual('../src/storage').default;
 
           return {
             __esModule: true,
@@ -196,15 +194,6 @@ describe('Google Cloud Storage', () => {
           done();
         });
       });
-      //
-      // test('should fails on delete remove an entity', () => {
-      //   const cloudDatabase: ILocalData = new GoogleCloudDatabase(storageConfig, { logger });
-      //
-      //   cloudDatabase.remove('fakeName', err => {
-      //     expect(err).not.toBeNull();
-      //     expect(err.message).toMatch(/not found/);
-      //   });
-      // });
 
       test('should get a new instance package storage', () => {
         const cloudDatabase = getCloudDatabase(storageConfig);
@@ -216,30 +205,29 @@ describe('Google Cloud Storage', () => {
 
     describe('should test non implemented methods', () => {
       test('should test saveToken', done => {
-        const warn = jest.fn();
-        const cloudDatabase = getCloudDatabase(storageConfig, { ...loggerDefault, warn });
+        const info = jest.fn();
+        const cloudDatabase = getCloudDatabase(storageConfig, { ...loggerDefault, info });
         cloudDatabase.saveToken({}).catch(() => {
-          expect(warn).toHaveBeenCalled();
+          expect(info).toHaveBeenCalled();
           done();
         });
       });
 
       test('should test deleteToken', done => {
-        const warn = jest.fn();
-        const cloudDatabase = getCloudDatabase(storageConfig, { ...loggerDefault, warn });
+        const error = jest.fn();
+        const cloudDatabase = getCloudDatabase(storageConfig, { ...loggerDefault, error });
         cloudDatabase.deleteToken({}).catch(() => {
-          expect(warn).toHaveBeenCalled();
+          expect(error).toHaveBeenCalled();
           done();
         });
       });
 
-      test('should test readTokens', done => {
-        const warn = jest.fn();
-        const cloudDatabase = getCloudDatabase(storageConfig, { ...loggerDefault, warn });
-        cloudDatabase.readTokens({}).catch(() => {
-          expect(warn).toHaveBeenCalled();
-          done();
-        });
+      test('should test readTokens', async(done) => {
+        const error = jest.fn();
+        const cloudDatabase = getCloudDatabase(storageConfig, { ...loggerDefault, error });
+        await cloudDatabase.readTokens({});
+        expect(error).toHaveBeenCalled();
+        done();
       });
 
       test('should test search', done => {
@@ -249,14 +237,6 @@ describe('Google Cloud Storage', () => {
           expect(warn).toHaveBeenCalled();
           done();
         });
-      });
-
-      test('should test sync', done => {
-        const warn = jest.fn();
-        const cloudDatabase = getCloudDatabase(storageConfig, { ...loggerDefault, warn });
-        cloudDatabase.sync();
-        expect(warn).toHaveBeenCalled();
-        done();
       });
     });
   });
