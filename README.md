@@ -1,4 +1,4 @@
-# verdaccio-google-cloud-storage
+# verdaccio-google-cloud-storage [![CircleCI](https://dl.circleci.com/status-badge/img/gh/xlts-dev/verdaccio-google-cloud-storage/tree/master.svg?style=svg)](https://dl.circleci.com/status-badge/redirect/gh/xlts-dev/verdaccio-google-cloud-storage/tree/master)
 ☁️📦 Google Cloud storage plugin for Verdaccio.
 
 The source code for this project started based on: https://github.com/verdaccio/monorepo/tree/v10.0.6/plugins/google-cloud
