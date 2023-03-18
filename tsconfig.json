@@ -8,14 +8,10 @@
     "outDir": "lib",
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
-    "typeRoots": [
-      "./node_modules/@verdaccio/types/lib/verdaccio",
-      "./node_modules/@types",
-      "./node_modules/@google-cloud"
-    ]
+    // TODO: Fix types in caught errors and remove this option.
+    "useUnknownInCatchVariables": false,
   },
   "include": [
-    "src/*.ts",
-    "types/*.d.ts"
-  ]
+    "src/**/*.ts",
+  ],
 }
