@@ -1,14 +1,14 @@
+import { Datastore, Key } from '@google-cloud/datastore';
 import { VerdaccioError } from '@verdaccio/commons-api';
 import { HTTP_STATUS } from '@verdaccio/commons-api/lib';
-import { ILocalPackageManager, Logger, Token } from '@verdaccio/types';
+import { Logger, Token } from '@verdaccio/types';
 
-import type GoogleCloudDatabase from '../src/data-storage';
-import { ERROR_MISSING_CONFIG } from '../src/data-storage';
+import GoogleCloudDatabase, { ERROR_MISSING_CONFIG } from '../src/data-storage';
 import { VerdaccioGoogleStorageConfig } from '../src/types';
 
 import storageConfig from './partials/config';
 
-const loggerDefault: { [key in keyof Logger]: jest.Mock<Logger[key]> } = {
+const loggerMock: { [key in keyof Logger]: jest.Mock<Logger[key]> } = {
   error: jest.fn(),
   info: jest.fn(),
   debug: jest.fn(),
@@ -24,13 +24,14 @@ describe('Google Cloud Storage', () => {
     jest.resetModules();
   });
 
-  const getCloudDatabase = (
-    storageConfig: VerdaccioGoogleStorageConfig,
-    logger = loggerDefault
-  ): GoogleCloudDatabase => {
-    const GoogleCloudDb: typeof GoogleCloudDatabase = require('../src/index').default;
-    const pluginOptions = { config: storageConfig, logger };
-    return new GoogleCloudDb(pluginOptions.config, pluginOptions);
+  const getCloudDatabase = (storageConfig: VerdaccioGoogleStorageConfig): GoogleCloudDatabase => {
+    // Mock `Datastore` methods which are used by `GoogleCloudDababase` and make server calls.
+    ['delete', 'get', 'runQuery', 'save'].forEach((method) => {
+      jest.spyOn(Datastore.prototype, method).mockRejectedValue(new Error('Mock implementation'));
+    });
+
+    const pluginOptions = { config: storageConfig, logger: loggerMock };
+    return new GoogleCloudDatabase(pluginOptions.config, pluginOptions);
   };
 
   describe('Google Cloud DataStore', () => {
@@ -65,139 +66,106 @@ describe('Google Cloud Storage', () => {
     });
 
     describe('DataStore basic calls', () => {
-      const pkgName = 'dataBasicItem1';
-
-      test('should add an Entity', (done) => {
-        // ** add, remove, get, getPackageStorage
-        jest.doMock('../src/storage', () => {
-          const originalModule = jest.requireActual('../src/storage').default;
-
-          return {
-            __esModule: true,
-            default: class Foo extends originalModule {
-              public datastore: object;
-              public constructor(props) {
-                super(props);
-                this.datastore = {
-                  key: jest.fn(),
-                  save: (): Promise<unknown[]> => Promise.resolve([]),
-                  createQuery: (): string => 'query',
-                  runQuery: (): Promise<object[]> =>
-                    Promise.resolve([
-                      [
-                        {
-                          name: pkgName,
-                        },
-                      ],
-                      {},
-                    ]),
-                };
-              }
-            },
-          };
-        });
-
+      test('should get existing entities', (done) => {
         const cloudDatabase = getCloudDatabase(storageConfig);
-        cloudDatabase.add(pkgName, (err: VerdaccioError) => {
-          expect(err).toBeNull();
+        // Mock the `Datastore#runQuery()` method to return a faked entities list.
+        const runQuerySpy = jest
+          .spyOn(Datastore.prototype, 'runQuery')
+          .mockResolvedValue([
+            [{ packageName: 'dataBasicItem1' }, { packageName: 'dataBasicItem3' }, { packageName: 'dataBasicItem2' }],
+            {},
+          ] as never);
 
-          cloudDatabase.get((err: VerdaccioError, results: string[]) => {
-            expect(results).not.toBeNull();
-            expect(err).toBeNull();
-            expect(results).toHaveLength(1);
-            expect(results[0]).toBe(pkgName);
-            done();
+        cloudDatabase.get((err: VerdaccioError, results: string[]) => {
+          expect(runQuerySpy).toHaveBeenCalledWith(expect.objectContaining({ kinds: ['VerdaccioPackage'] }), {
+            gaxOptions: { autoPaginate: true },
           });
+
+          expect(err).toBeNull();
+          expect(results).toStrictEqual(['dataBasicItem1', 'dataBasicItem2', 'dataBasicItem3']);
+
+          done();
         });
       });
 
-      test('should fails add an Entity', (done) => {
-        // ** add, remove, get, getPackageStorage
-        jest.doMock('../src/storage', () => {
-          const originalModule = jest.requireActual('../src/storage').default;
-
-          return {
-            __esModule: true,
-            default: class Foo extends originalModule {
-              public datastore: object;
-              public constructor(props) {
-                super(props);
-                this.datastore = {
-                  key: jest.fn(),
-                  save: (): Promise<never> => Promise.reject(new Error('')),
-                  createQuery: (): string => 'query',
-                  runQuery: (): Promise<object[]> =>
-                    Promise.resolve([
-                      [
-                        {
-                          name: pkgName,
-                        },
-                      ],
-                      {},
-                    ]),
-                };
-              }
-            },
-          };
-        });
-
+      test('should add an entity', (done) => {
         const cloudDatabase = getCloudDatabase(storageConfig);
-        cloudDatabase.add(pkgName, (err: VerdaccioError) => {
-          expect(err).not.toBeNull();
-          expect(err.code).toEqual(HTTP_STATUS.INTERNAL_ERROR);
+        // Mock the `Datastore#save()` method to complete successfully, simulating a successful addition.
+        jest.spyOn(Datastore.prototype, 'save').mockResolvedValue(undefined as never);
+        loggerMock.error.mockClear();
+
+        cloudDatabase.add('dataBasicItem1', (err: VerdaccioError) => {
+          expect(loggerMock.error).not.toHaveBeenCalled();
+          expect(err).toBeUndefined();
+
+          done();
+        });
+      });
+
+      test('should handle failing to add an entity', (done) => {
+        const cloudDatabase = getCloudDatabase(storageConfig);
+        // Mock the `Datastore#save()` method to fail, simulating a failed addition.
+        jest.spyOn(Datastore.prototype, 'save').mockRejectedValue(new Error('Failed to add.') as never);
+        loggerMock.error.mockClear();
+
+        cloudDatabase.add('dataBasicItem1', (err: VerdaccioError) => {
+          expect(loggerMock.error).toHaveBeenCalledWith(
+            "gcloud: [datastore add] failed to add package 'dataBasicItem1' to datastore '[default].VerdaccioPackage': Failed to add."
+          );
+
+          expect(err).toBeInstanceOf(Error);
+          expect(err.code).toBe(HTTP_STATUS.INTERNAL_ERROR);
+          expect(err.message).toBe('Failed to add.');
+
           done();
         });
       });
 
       test('should delete an entity', (done) => {
-        const deleteDataStore = jest.fn();
-
-        jest.doMock('../src/storage', () => {
-          const originalModule = jest.requireActual('../src/storage').default;
-
-          return {
-            __esModule: true,
-            default: class Foo extends originalModule {
-              public datastore: object;
-              public constructor(props) {
-                super(props);
-                // gcloud sdk uses Symbols for metadata in entities
-                const sym = Symbol('name');
-                this.datastore = {
-                  KEY: sym,
-                  key: jest.fn(() => true),
-                  int: jest.fn(() => 1),
-                  delete: deleteDataStore,
-                  createQuery: (): string => 'query',
-                  runQuery: (): Promise<object[]> => {
-                    const entity = {
-                      name: pkgName,
-                      id: 1,
-                    };
-                    entity[sym] = entity;
-
-                    return Promise.resolve([[entity], {}]);
-                  },
-                };
-              }
-            },
-          };
-        });
-
         const cloudDatabase = getCloudDatabase(storageConfig);
+        // Mock the `Datastore#key()` method to generate a fake key.
+        const fakeKey = {} as Key;
+        jest.spyOn(Datastore.prototype, 'key').mockReturnValue(fakeKey);
+        // Mock the `Datastore#get()` method to complete successfully, simulating an existing entity.
+        const getSpy = jest
+          .spyOn(Datastore.prototype, 'get')
+          .mockResolvedValue([{ packageName: 'dataBasicItem1' }] as never);
+        // Mock the `Datastore#delete()` method to complete successfully, simulating a successful creation.
+        const deleteSpy = jest.spyOn(Datastore.prototype, 'delete').mockResolvedValue(undefined as never);
+        loggerMock.error.mockClear();
 
-        cloudDatabase.remove(pkgName, (err, result) => {
-          expect(err).toBeNull();
-          expect(result).not.toBeNull();
-          expect(deleteDataStore).toHaveBeenCalled();
-          expect(deleteDataStore).toHaveBeenCalledTimes(1);
+        cloudDatabase.remove('dataBasicItem1', (err: VerdaccioError) => {
+          expect(loggerMock.error).not.toHaveBeenCalled();
+          expect(err).toBeUndefined();
+
+          expect(getSpy).toHaveBeenCalledWith(fakeKey);
+          expect(deleteSpy).toHaveBeenCalledWith(fakeKey);
+
+          done();
+        });
+      });
+
+      test('should handle deleting a missing entity', (done) => {
+        const cloudDatabase = getCloudDatabase(storageConfig);
+        // Mock the `get()` method to return an empty array, indicating the entity was not found.
+        jest.spyOn(Datastore.prototype, 'get').mockResolvedValue([] as never);
+        loggerMock.warn.mockClear();
+
+        cloudDatabase.remove('fakeName', (err) => {
+          expect(loggerMock.warn).toHaveBeenCalledWith(
+            "gcloud: [datastore remove] package 'fakeName' was not found in datastore '[default].VerdaccioPackage'"
+          );
+
+          expect(err).toBeInstanceOf(Error);
+          expect(err.message).toBe("package 'fakeName' was not found");
+
           done();
         });
       });
 
       test('should get a new instance package storage', () => {
         const cloudDatabase = getCloudDatabase(storageConfig);
-        const store: ILocalPackageManager = cloudDatabase.getPackageStorage('newInstance');
+        const store = cloudDatabase.getPackageStorage('newInstance');
         expect(store).not.toBeNull();
         expect(store).toBeDefined();
       });
@@ -205,43 +173,52 @@ describe('Google Cloud Storage', () => {
 
     describe('should test non implemented methods', () => {
       test('should test saveToken', (done) => {
-        const info = jest.fn();
-        const cloudDatabase = getCloudDatabase(storageConfig, { ...loggerDefault, info });
+        const cloudDatabase = getCloudDatabase(storageConfig);
+        loggerMock.error.mockClear();
+        loggerMock.info.mockClear();
+
         cloudDatabase.saveToken({} as Token).catch(() => {
-          expect(info).toHaveBeenCalled();
+          expect(loggerMock.info).toHaveBeenCalled();
+          expect(loggerMock.error).toHaveBeenCalled();
           done();
         });
       });
 
       test('should test deleteToken', (done) => {
-        const error = jest.fn();
-        const cloudDatabase = getCloudDatabase(storageConfig, { ...loggerDefault, error });
+        const cloudDatabase = getCloudDatabase(storageConfig);
+        loggerMock.error.mockClear();
+        loggerMock.info.mockClear();
+
         cloudDatabase.deleteToken('someUser', 'someToken').catch(() => {
-          expect(error).toHaveBeenCalled();
+          expect(loggerMock.info).toHaveBeenCalled();
+          expect(loggerMock.error).toHaveBeenCalled();
           done();
         });
       });
 
-      test('should test readTokens', async (done) => {
-        const error = jest.fn();
-        const cloudDatabase = getCloudDatabase(storageConfig, { ...loggerDefault, error });
-        await cloudDatabase.readTokens({ user: '' });
-        expect(error).toHaveBeenCalled();
-        done();
+      test('should test readTokens', async () => {
+        const cloudDatabase = getCloudDatabase(storageConfig);
+        loggerMock.error.mockClear();
+        loggerMock.info.mockClear();
+
+        const tokens = await cloudDatabase.readTokens({ user: '' });
+
+        expect(tokens).toStrictEqual([]);
+        expect(loggerMock.info).toHaveBeenCalled();
+        expect(loggerMock.error).toHaveBeenCalled();
       });
 
-      test('should test search', (done) => {
-        const warn = jest.fn();
-        const cloudDatabase = getCloudDatabase(storageConfig, { ...loggerDefault, warn });
-        cloudDatabase.search(
-          () => {
-            throw new Error('`onPackage` callback should not have been called.');
-          },
-          () => {
-            expect(warn).toHaveBeenCalled();
-            done();
-          }
-        );
+      test('should test search', async () => {
+        const cloudDatabase = getCloudDatabase(storageConfig);
+        const onPkgMock = jest.fn();
+        const onEndMock = jest.fn();
+        loggerMock.warn.mockClear();
+
+        await cloudDatabase.search(onPkgMock, onEndMock);
+
+        expect(loggerMock.warn).toHaveBeenCalledWith('package search has not been implemented');
+        expect(onPkgMock).not.toHaveBeenCalled();
+        expect(onEndMock).toHaveBeenCalled();
       });
     });
   });
