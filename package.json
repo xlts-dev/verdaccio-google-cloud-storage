@@ -63,7 +63,8 @@
     "build:types": "tsc --emitDeclarationOnly --project src/tsconfig.json",
     "coverage:publish": "codecov --root=../../ -F plugins",
     "lint": "eslint \"**/*.{js,ts}\"",
-    "test": " jest --env node --config ./jest.config.js",
+    "test:unit": "jest --env node --config ./jest.config.js",
+    "test": "npm run lint && npm run type-check && npm run test:unit",
     "type-check": "tsc --noEmit",
     "type-check:watch": "npm run type-check -- --watch"
   }
