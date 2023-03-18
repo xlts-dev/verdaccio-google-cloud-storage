@@ -2,11 +2,12 @@ import { VerdaccioGoogleStorageConfig } from '../../src/types';
 
 class Config implements VerdaccioGoogleStorageConfig {
   projectId: string;
-  keyFilename: string;
-  bucket: string;
+  keyFileName: string;
+  bucketName: string;
   kind: string;
   self_path: string;
   secret: string;
+  secretName: string;
   user_agent: string;
   server_id: string;
   packages: PackageList;
@@ -19,7 +20,7 @@ class Config implements VerdaccioGoogleStorageConfig {
 
   constructor() {
     this.self_path = './test';
-    this.secret = '12345';
+    this.secretName = '12345';
     this.uplinks = {
       npmjs: {
         url: 'http://never_use:0000/'
@@ -30,9 +31,9 @@ class Config implements VerdaccioGoogleStorageConfig {
     this.packages = {};
     this.logs = [];
     this.kind = 'partial_test_metadataDatabaseKey';
-    this.bucket = 'verdaccio-plugin';
+    this.bucketName = 'verdaccio-plugin';
     this.projectId = 'verdaccio-01';
-    // this.keyFilename = './verdaccio-01-56f693e3aab0.json';
+    // this.keyFileName = './verdaccio-01-56f693e3aab0.json';
   }
   checkSecretKey(): string {
     return '';
