@@ -7,7 +7,7 @@ import { IPackageStorageManager } from '@verdaccio/types';
 import { Logger, ILocalData, Callback, Package, IPackageStorage } from '@verdaccio/types';
 import { HTTP_STATUS, API_ERROR, VerdaccioError } from '@verdaccio/commons-api';
 
-import { pkgFileName } from '../src/storage';
+import { PACKAGE_JSON } from '../src/storage';
 import { VerdaccioGoogleStorageConfig } from '../src/types';
 
 import storageConfig from './partials/config';
@@ -16,7 +16,7 @@ import { generatePackage } from './partials/utils.helpers';
 
 type ITestLocalData = ILocalData<VerdaccioGoogleStorageConfig>;
 
-const logger: Logger = {
+const loggerDefault: Logger = {
   error: jest.fn(),
   info: jest.fn(),
   debug: jest.fn(),
@@ -64,11 +64,9 @@ describe('Google Cloud Storage', () => {
     jest.resetModules();
   });
 
-  const getCloudDatabase = (storageConfig): any => {
+  const getCloudDatabase = (storageConfig, logger = loggerDefault): any => {
     const GoogleCloudDatabase = require('../src/index').default;
-    const cloudDatabase = new GoogleCloudDatabase(storageConfig, { logger });
-
-    return cloudDatabase;
+    return new GoogleCloudDatabase(storageConfig, { logger });
   };
 
   // storage test
@@ -85,21 +83,23 @@ describe('Google Cloud Storage', () => {
       const pkgName = 'createPkg1';
 
       test('should create a package', (done: jest.DoneCallback) => {
-        jest.doMock('../src/storage-helper', () => {
-          const originalModule = jest.requireActual('../src/storage-helper').default;
+        jest.doMock('../src/storage', () => {
+          const originalModule = jest.requireActual('../src/storage').default;
           return {
             __esModule: true,
             default: class Foo extends originalModule {
               public storage: object;
               public config: object;
+              public logger: Logger;
               public constructor(props) {
                 super(props);
                 this.config = {
-                  bucket: 'foo',
+                  bucketName: 'foo',
                 };
                 this.storage = {
                   bucket: (name): any => new Bucket(name, false),
                 };
+                this.logger = loggerDefault;
               }
             },
           };
@@ -118,8 +118,8 @@ describe('Google Cloud Storage', () => {
       });
 
       test('should fails on package already exist', done => {
-        jest.doMock('../src/storage-helper', () => {
-          const originalModule = jest.requireActual('../src/storage-helper').default;
+        jest.doMock('../src/storage', () => {
+          const originalModule = jest.requireActual('../src/storage').default;
           return {
             __esModule: true,
             default: class Foo extends originalModule {
@@ -128,11 +128,12 @@ describe('Google Cloud Storage', () => {
               public constructor(props) {
                 super(props);
                 this.config = {
-                  bucket: 'foo',
+                  bucketName: 'foo',
                 };
                 this.storage = {
                   bucket: name => new Bucket(name, true),
                 };
+                this.logger = loggerDefault;
               }
             },
           };
@@ -163,8 +164,8 @@ describe('Google Cloud Storage', () => {
           }
         };
 
-        jest.doMock('../src/storage-helper', () => {
-          const originalModule = jest.requireActual('../src/storage-helper').default;
+        jest.doMock('../src/storage', () => {
+          const originalModule = jest.requireActual('../src/storage').default;
           return {
             __esModule: true,
             default: class Foo extends originalModule {
@@ -173,11 +174,12 @@ describe('Google Cloud Storage', () => {
               public constructor(props) {
                 super(props);
                 this.config = {
-                  bucket: 'foo',
+                  bucketName: 'foo',
                 };
                 this.storage = {
                   bucket: name => new Bucket(name, true, FileMockedFailure),
                 };
+                this.logger = loggerDefault;
               }
             },
           };
@@ -225,7 +227,7 @@ describe('Google Cloud Storage', () => {
         const store = cloudDatabase.getPackageStorage(pkgName);
         expect(store).not.toBeNull();
         if (store) {
-          store.deletePackage(pkgFileName, (err: VerdaccioError) => {
+          store.deletePackage(PACKAGE_JSON, (err: VerdaccioError) => {
             expect(err).toBeNull();
             done();
           });
@@ -236,7 +238,7 @@ describe('Google Cloud Storage', () => {
         const store = cloudDatabase.getPackageStorage('404Fake');
         expect(store).not.toBeNull();
         if (store) {
-          store.deletePackage(pkgFileName, (err: VerdaccioError) => {
+          store.deletePackage(PACKAGE_JSON, (err: VerdaccioError) => {
             expect(err).not.toBeNull();
             expect(err.message).toBe(API_ERROR.NO_PACKAGE);
             expect(err.code).toEqual(HTTP_STATUS.NOT_FOUND);
@@ -395,7 +397,6 @@ describe('Google Cloud Storage', () => {
     });
 
     describe('GoogleCloudStorageHandler:: writeFile', () => {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
       const MemoryFileSystem = require('memory-fs');
       const memfs = new MemoryFileSystem();
       const tarballFile = path.join(__dirname, '/partials/test-pkg/', 'test-pkg-1.0.0.tgz');
@@ -436,8 +437,8 @@ describe('Google Cloud Storage', () => {
       };
 
       test('should write a tarball successfully push data', done => {
-        jest.doMock('../src/storage-helper', () => {
-          const originalModule = jest.requireActual('../src/storage-helper').default;
+        jest.doMock('../src/storage', () => {
+          const originalModule = jest.requireActual('../src/storage').default;
           return {
             __esModule: true,
             default: class Foo extends originalModule {
@@ -446,11 +447,12 @@ describe('Google Cloud Storage', () => {
               public constructor(props) {
                 super(props);
                 this.config = {
-                  bucket: 'foo',
+                  bucketName: 'foo',
                 };
                 this.storage = {
                   bucket: name => new Bucket(name, false, FileWriteMocked),
                 };
+                this.logger = loggerDefault;
               }
             },
           };
@@ -594,11 +596,12 @@ describe('Google Cloud Storage', () => {
 
     describe('GoogleCloudStorageHandler:: deleteTarball', () => {
       test('should delete successfully get a tarball', done => {
-        jest.doMock('../src/storage-helper', () => {
+        jest.doMock('../src/storage', () => {
+          const originalModule = jest.requireActual('../src/storage').default;
           return {
             __esModule: true,
-            default: class Foo {
-              public buildFilePath(): {
+            default: class Foo extends originalModule {
+              public _buildFilePath(): {
                 name: string;
                 delete: () => Promise<object[]>;
               } {
@@ -618,6 +621,8 @@ describe('Google Cloud Storage', () => {
 
         const cloudDatabase: ITestLocalData = getCloudDatabase(storageConfig);
         const store = cloudDatabase.getPackageStorage(pkgExample.name);
+        expect(store).not.toBeNull();
+
         if (store) {
           store.deletePackage('test-pkg-1.0.0.tgz', (err: VerdaccioError) => {
             expect(err).toBeNull();
@@ -627,11 +632,12 @@ describe('Google Cloud Storage', () => {
       });
 
       test('should fails on delete a tarball', done => {
-        jest.doMock('../src/storage-helper', () => {
+        jest.doMock('../src/storage', () => {
+          const originalModule = jest.requireActual('../src/storage').default;
           return {
             __esModule: true,
-            default: class Foo {
-              public buildFilePath(): {
+            default: class Foo extends originalModule {
+              public _buildFilePath(): {
                 name: string;
                 delete: () => Promise<never>;
               } {
@@ -646,6 +652,7 @@ describe('Google Cloud Storage', () => {
 
         const cloudDatabase: ITestLocalData = getCloudDatabase(storageConfig);
         const store = cloudDatabase.getPackageStorage(pkgExample.name);
+
         if (store) {
           store.deletePackage('test-pkg-1.0.0.tgz', (err: VerdaccioError) => {
             expect(err).not.toBeNull();
