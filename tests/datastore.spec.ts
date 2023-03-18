@@ -1,8 +1,9 @@
-import _ from 'lodash';
-import { Logger, ILocalPackageManager } from '@verdaccio/types';
 import { VerdaccioError } from '@verdaccio/commons-api';
 import { HTTP_STATUS } from '@verdaccio/commons-api/lib';
+import { ILocalPackageManager, Logger } from '@verdaccio/types';
+import _ from 'lodash';
 
+import type GoogleCloudDatabase from '../src/data-storage';
 import { ERROR_MISSING_CONFIG } from '../src/data-storage';
 import { VerdaccioGoogleStorageConfig } from '../src/types';
 
@@ -24,9 +25,9 @@ describe('Google Cloud Storage', () => {
     jest.resetModules();
   });
 
-  const getCloudDatabase = (storageConfig, logger = loggerDefault): any => {
-    const GoogleCloudDatabase = require('../src/index').default;
-    return new GoogleCloudDatabase(storageConfig, { logger });
+  const getCloudDatabase = (storageConfig, logger = loggerDefault): GoogleCloudDatabase => {
+    const GoogleCloudDb = require('../src/index').default;
+    return new GoogleCloudDb(storageConfig, { logger });
   };
 
   describe('Google Cloud DataStore', () => {
@@ -67,7 +68,7 @@ describe('Google Cloud Storage', () => {
     describe('DataStore basic calls', () => {
       const pkgName = 'dataBasicItem1';
 
-      test('should add an Entity', done => {
+      test('should add an Entity', (done) => {
         // ** add, remove, get, getPackageStorage
         jest.doMock('../src/storage', () => {
           const originalModule = jest.requireActual('../src/storage').default;
@@ -80,7 +81,7 @@ describe('Google Cloud Storage', () => {
                 super(props);
                 this.datastore = {
                   key: jest.fn(),
-                  save: (): Promise<[]> => Promise.resolve([]),
+                  save: (): Promise<unknown[]> => Promise.resolve([]),
                   createQuery: (): string => 'query',
                   runQuery: (): Promise<object[]> =>
                     Promise.resolve([
@@ -111,7 +112,7 @@ describe('Google Cloud Storage', () => {
         });
       });
 
-      test('should fails add an Entity', done => {
+      test('should fails add an Entity', (done) => {
         // ** add, remove, get, getPackageStorage
         jest.doMock('../src/storage', () => {
           const originalModule = jest.requireActual('../src/storage').default;
@@ -149,7 +150,7 @@ describe('Google Cloud Storage', () => {
         });
       });
 
-      test('should delete an entity', done => {
+      test('should delete an entity', (done) => {
         const deleteDataStore = jest.fn();
 
         jest.doMock('../src/storage', () => {
@@ -204,7 +205,7 @@ describe('Google Cloud Storage', () => {
     });
 
     describe('should test non implemented methods', () => {
-      test('should test saveToken', done => {
+      test('should test saveToken', (done) => {
         const info = jest.fn();
         const cloudDatabase = getCloudDatabase(storageConfig, { ...loggerDefault, info });
         cloudDatabase.saveToken({}).catch(() => {
@@ -213,7 +214,7 @@ describe('Google Cloud Storage', () => {
         });
       });
 
-      test('should test deleteToken', done => {
+      test('should test deleteToken', (done) => {
         const error = jest.fn();
         const cloudDatabase = getCloudDatabase(storageConfig, { ...loggerDefault, error });
         cloudDatabase.deleteToken({}).catch(() => {
@@ -222,7 +223,7 @@ describe('Google Cloud Storage', () => {
         });
       });
 
-      test('should test readTokens', async(done) => {
+      test('should test readTokens', async (done) => {
         const error = jest.fn();
         const cloudDatabase = getCloudDatabase(storageConfig, { ...loggerDefault, error });
         await cloudDatabase.readTokens({});
@@ -230,7 +231,7 @@ describe('Google Cloud Storage', () => {
         done();
       });
 
-      test('should test search', done => {
+      test('should test search', (done) => {
         const warn = jest.fn();
         const cloudDatabase = getCloudDatabase(storageConfig, { ...loggerDefault, warn });
         cloudDatabase.search(null, () => {

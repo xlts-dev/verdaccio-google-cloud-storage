@@ -1,25 +1,25 @@
 import { Readable } from 'stream';
-import { UploadTarball, ReadTarball } from '@verdaccio/streams';
+
+import { Bucket, DownloadResponse, File, Storage } from '@google-cloud/storage';
 import {
-  Package,
-  Callback,
-  Logger,
+  getBadRequest,
+  getConflict,
+  getInternalError,
+  getNotFound,
+  HTTP_STATUS,
+  VerdaccioError,
+} from '@verdaccio/commons-api';
+import { ReadTarball, UploadTarball } from '@verdaccio/streams';
+import {
+  CallbackAction,
   IPackageStorageManager,
+  Logger,
+  Package,
+  PackageTransformer,
+  ReadPackageCallback,
   StorageUpdateCallback,
   StorageWriteCallback,
-  PackageTransformer,
-  CallbackAction,
-  ReadPackageCallback,
 } from '@verdaccio/types';
-import { File, DownloadResponse, Bucket, Storage } from '@google-cloud/storage';
-import {
-  VerdaccioError,
-  getInternalError,
-  getBadRequest,
-  getNotFound,
-  getConflict,
-  HTTP_STATUS,
-} from '@verdaccio/commons-api';
 
 import { VerdaccioGoogleStorageConfig } from './types';
 
@@ -27,7 +27,7 @@ export const PACKAGE_JSON = 'package.json';
 export const DEFAULT_VALIDATION = 'crc32c';
 export const PACKAGE_CACHE_TTL_SECONDS = 30;
 
-const packageAlreadyExist = function(name: string): VerdaccioError {
+const packageAlreadyExist = function (name: string): VerdaccioError {
   return getConflict(`${name} package already exist`);
 };
 
@@ -88,16 +88,13 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
           onEnd(getInternalError(err.message));
         }
       )
-      .catch(
-        (err: Error): Callback => {
-          this.logger.error(
-            { name, error: err },
-            'gcloud: trying to update @{name} and was not found on storage err: @{error}'
-          );
-          // @ts-ignore
-          return onEnd(getNotFound());
-        }
-      );
+      .catch((err: Error) => {
+        this.logger.error(
+          { name, error: err },
+          'gcloud: trying to update @{name} and was not found on storage err: @{error}'
+        );
+        return onEnd(getNotFound());
+      });
   }
 
   public deletePackage(fileName: string, cb: CallbackAction): void {
@@ -128,7 +125,7 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
   //  Because all files have been removed, the folder structure no longer exists in the bucket.
   public removePackage(callback: CallbackAction): void {
     // remove all files from storage
-    const file =this._getBucket().file(`${this.name}`);
+    const file = this._getBucket().file(`${this.name}`);
     this.logger.debug({ name: file.name }, 'gcloud: removing the package @{name} from storage');
     file.delete().then(
       (): void => {
@@ -179,34 +176,26 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
       });
   }
 
-  /* eslint-disable no-async-promise-executor */
-  private _savePackage(name: string, metadata: Package): Promise<null | VerdaccioError> {
-    return new Promise(
-      async (resolve, reject): Promise<void> => {
-        const file = this._buildFilePath(name, PACKAGE_JSON);
-        try {
-          await file.save(this._convertToString(metadata), {
-            validation: this.config?.bucketOptions?.validation || DEFAULT_VALIDATION,
-            /**
-             * When resumable is `undefined` - it will default to `true`as per GC Storage documentation:
-             * `Resumable uploads are automatically enabled and must be shut off explicitly by setting options.resumable to false`
-             * @see https://cloud.google.com/nodejs/docs/reference/storage/2.5.x/File#createWriteStream
-             */
-            resumable: this.config?.bucketOptions?.resumable,
-          });
-          resolve(null);
-        } catch (err) {
-          reject(getInternalError(err.message));
-        }
-      }
-    );
+  private async _savePackage(name: string, metadata: Package): Promise<void> {
+    const file = this._buildFilePath(name, PACKAGE_JSON);
+    try {
+      await file.save(this._convertToString(metadata), {
+        validation: this.config?.bucketOptions?.validation || DEFAULT_VALIDATION,
+        /**
+         * When resumable is `undefined` - it will default to `true` as per GC Storage documentation:
+         * `Resumable uploads are automatically enabled and must be shut off explicitly by setting options.resumable to false`
+         * @see https://cloud.google.com/nodejs/docs/reference/storage/2.5.x/File#createWriteStream
+         */
+        resumable: this.config?.bucketOptions?.resumable,
+      });
+    } catch (err) {
+      throw getInternalError(err.message);
+    }
   }
-  /* eslint-enable no-async-promise-executor */
 
   private _convertToString(value: Package): string {
     return JSON.stringify(value, null, '\t');
   }
-
 
   /**
    * Retrieve the package.json for a specific package from the GCS bucket.
@@ -217,7 +206,9 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
     this.logger.debug(`gcloud: [readPackage] start retrieving '${PACKAGE_JSON}' file for package '${packageName}'`);
     this._readPackage(packageName)
       .then((packageJson) => callback(null, packageJson))
-      .catch((error) => callback(getNotFound(`failed retrieving '${PACKAGE_JSON}' file for package '${packageName}' from storage`)));
+      .catch(() =>
+        callback(getNotFound(`failed retrieving '${PACKAGE_JSON}' file for package '${packageName}' from storage`))
+      );
   }
 
   /**
@@ -232,51 +223,55 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
     this.logger.debug(`gcloud: [_readPackage] start retrieving '${PACKAGE_JSON}' file for package '${packageName}'`);
 
     const cachedPackageJson = GoogleCloudStorageHandler.packageJsonCache[packageName];
-    if (cachedPackageJson && cachedPackageJson.timestamp > new Date().getTime() - (PACKAGE_CACHE_TTL_SECONDS * 1000)) {
+    if (cachedPackageJson && cachedPackageJson.timestamp > new Date().getTime() - PACKAGE_CACHE_TTL_SECONDS * 1000) {
       const content = await cachedPackageJson.content;
       const packageJson: Package = JSON.parse(content[0].toString('utf8'));
-      this.logger.info(`gcloud: [_readPackage] providing '${PACKAGE_JSON}' file for package '${packageName}' from CACHE`);
+      this.logger.info(
+        `gcloud: [_readPackage] providing '${PACKAGE_JSON}' file for package '${packageName}' from CACHE`
+      );
       return packageJson;
     }
 
     const file = this._buildFilePath(packageName, PACKAGE_JSON);
     try {
       const fileDownloadPromise = file.download();
-      GoogleCloudStorageHandler.packageJsonCache[packageName] = { timestamp: new Date().getTime(), content: fileDownloadPromise };
+      GoogleCloudStorageHandler.packageJsonCache[packageName] = {
+        timestamp: new Date().getTime(),
+        content: fileDownloadPromise,
+      };
       const content: DownloadResponse = await fileDownloadPromise;
-      this.logger.info(`gcloud: [_readPackage] successfully retrieved '${PACKAGE_JSON}' file for package '${packageName}' from storage`);
+      this.logger.info(
+        `gcloud: [_readPackage] successfully retrieved '${PACKAGE_JSON}' file for package '${packageName}' from storage`
+      );
       const packageJson: Package = JSON.parse(content[0].toString('utf8'));
-      this.logger.trace(`gcloud: [_readPackage] '${PACKAGE_JSON}' file for package '${packageName}': ${JSON.stringify(packageJson)}`)
+      this.logger.trace(
+        `gcloud: [_readPackage] '${PACKAGE_JSON}' file for package '${packageName}': ${JSON.stringify(packageJson)}`
+      );
       GoogleCloudStorageHandler.packageJsonCache[packageName] = { timestamp: new Date().getTime(), content: content };
-      return packageJson
+      return packageJson;
     } catch (error) {
-      this.logger.error(`gcloud: [_readPackage] failed retrieving '${PACKAGE_JSON}' file for package '${packageName}' from storage: ${error.message}`);
+      this.logger.error(
+        `gcloud: [_readPackage] failed retrieving '${PACKAGE_JSON}' file for package '${packageName}' from storage: ${error.message}`
+      );
       throw error;
     }
   }
 
-  private _fileExist(name: string, fileName: string): Promise<boolean> {
-    return new Promise(
-      async (resolve, reject): Promise<void> => {
-        const file: File = this._buildFilePath(name, fileName);
-        try {
-          const data = await file.exists();
-          const exist = data[0];
+  private async _fileExist(name: string, fileName: string): Promise<boolean> {
+    const file: File = this._buildFilePath(name, fileName);
+    try {
+      const [exist] = await file.exists();
+      this.logger.debug({ name, exist }, 'gcloud: check whether @{name} exist successfully: @{exist}');
+      return exist;
+    } catch (err) {
+      this.logger.error(
+        { name: file.name, err: err.message },
+        'gcloud: check exist package @{name} has failed, cause: @{err}'
+      );
 
-          resolve(exist);
-          this.logger.debug({ name: name, exist }, 'gcloud: check whether @{name} exist successfully: @{exist}');
-        } catch (err) {
-          this.logger.error(
-            { name: file.name, err: err.message },
-            'gcloud: check exist package @{name} has failed, cause: @{err}'
-          );
-
-          reject(getInternalError(err.message));
-        }
-      }
-    );
+      throw getInternalError(err.message);
+    }
   }
-  /* eslint-disable no-async-promise-executor */
 
   public writeTarball(name: string): UploadTarball {
     const uploadStream: UploadTarball = new UploadTarball({});
@@ -288,7 +283,7 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
             this.logger.debug({ url: this.name }, 'gcloud:  @{url} package already exists in the storage bucket');
             uploadStream.emit('error', packageAlreadyExist(name));
           } else {
-            const file =this._getBucket().file(`${this.name}/${name}`);
+            const file = this._getBucket().file(`${this.name}/${name}`);
             this.logger.info({ url: file.name }, 'gcloud: the @{url} is being uploaded to the storage bucket');
             const fileStream = file.createWriteStream({
               validation: this.config?.bucketOptions?.validation || DEFAULT_VALIDATION,
@@ -302,7 +297,7 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
               });
             };
 
-            fileStream._destroy = function(err: Error): void {
+            fileStream._destroy = function (err: Error): void {
               // this is an error when user is not authenticated
               // [BadRequestError: Could not authenticate request
               //  getaddrinfo ENOTFOUND www.googleapis.com www.googleapis.com:443]
