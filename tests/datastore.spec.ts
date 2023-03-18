@@ -1,7 +1,6 @@
 import { VerdaccioError } from '@verdaccio/commons-api';
 import { HTTP_STATUS } from '@verdaccio/commons-api/lib';
-import { ILocalPackageManager, Logger } from '@verdaccio/types';
-import _ from 'lodash';
+import { ILocalPackageManager, Logger, Token } from '@verdaccio/types';
 
 import type GoogleCloudDatabase from '../src/data-storage';
 import { ERROR_MISSING_CONFIG } from '../src/data-storage';
@@ -9,7 +8,7 @@ import { VerdaccioGoogleStorageConfig } from '../src/types';
 
 import storageConfig from './partials/config';
 
-const loggerDefault: Logger = {
+const loggerDefault: { [key in keyof Logger]: jest.Mock<Logger[key]> } = {
   error: jest.fn(),
   info: jest.fn(),
   debug: jest.fn(),
@@ -25,9 +24,13 @@ describe('Google Cloud Storage', () => {
     jest.resetModules();
   });
 
-  const getCloudDatabase = (storageConfig, logger = loggerDefault): GoogleCloudDatabase => {
-    const GoogleCloudDb = require('../src/index').default;
-    return new GoogleCloudDb(storageConfig, { logger });
+  const getCloudDatabase = (
+    storageConfig: VerdaccioGoogleStorageConfig,
+    logger = loggerDefault
+  ): GoogleCloudDatabase => {
+    const GoogleCloudDb: typeof GoogleCloudDatabase = require('../src/index').default;
+    const pluginOptions = { config: storageConfig, logger };
+    return new GoogleCloudDb(pluginOptions.config, pluginOptions);
   };
 
   describe('Google Cloud DataStore', () => {
@@ -41,26 +44,22 @@ describe('Google Cloud Storage', () => {
       });
 
       test('should fails on create an instance due to bucket name invalid', () => {
-        expect(() => {
-          const testConf: VerdaccioGoogleStorageConfig = _.clone(storageConfig);
-          delete testConf.bucketName;
-
-          getCloudDatabase(testConf);
-        }).toThrow(new Error('Google Cloud Storage requires a bucket name, please define one.'));
+        const invalidConfig = Object.assign(storageConfig.clone(), { bucketName: undefined });
+        expect(() => getCloudDatabase(invalidConfig)).toThrow(
+          new Error('Google Cloud Storage requires a bucket name, please define one.')
+        );
       });
 
       test('should fails on create an instance fails due projectId invalid', () => {
-        expect(() => {
-          const testConf: VerdaccioGoogleStorageConfig = _.clone(storageConfig);
-          delete testConf.secretName;
-
-          getCloudDatabase(testConf);
-        }).toThrow(new Error('Google Cloud Storage requires a secret name, please define one.'));
+        const invalidConfig = Object.assign(storageConfig.clone(), { secretName: undefined });
+        expect(() => getCloudDatabase(invalidConfig)).toThrow(
+          new Error('Google Cloud Storage requires a secret name, please define one.')
+        );
       });
 
       test('should fails on config is not to be provided', () => {
         expect(() => {
-          getCloudDatabase(undefined);
+          getCloudDatabase(undefined as unknown as VerdaccioGoogleStorageConfig);
         }).toThrow(new Error(ERROR_MISSING_CONFIG));
       });
     });
@@ -208,7 +207,7 @@ describe('Google Cloud Storage', () => {
       test('should test saveToken', (done) => {
         const info = jest.fn();
         const cloudDatabase = getCloudDatabase(storageConfig, { ...loggerDefault, info });
-        cloudDatabase.saveToken({}).catch(() => {
+        cloudDatabase.saveToken({} as Token).catch(() => {
           expect(info).toHaveBeenCalled();
           done();
         });
@@ -217,7 +216,7 @@ describe('Google Cloud Storage', () => {
       test('should test deleteToken', (done) => {
         const error = jest.fn();
         const cloudDatabase = getCloudDatabase(storageConfig, { ...loggerDefault, error });
-        cloudDatabase.deleteToken({}).catch(() => {
+        cloudDatabase.deleteToken('someUser', 'someToken').catch(() => {
           expect(error).toHaveBeenCalled();
           done();
         });
@@ -226,7 +225,7 @@ describe('Google Cloud Storage', () => {
       test('should test readTokens', async (done) => {
         const error = jest.fn();
         const cloudDatabase = getCloudDatabase(storageConfig, { ...loggerDefault, error });
-        await cloudDatabase.readTokens({});
+        await cloudDatabase.readTokens({ user: '' });
         expect(error).toHaveBeenCalled();
         done();
       });
@@ -234,10 +233,15 @@ describe('Google Cloud Storage', () => {
       test('should test search', (done) => {
         const warn = jest.fn();
         const cloudDatabase = getCloudDatabase(storageConfig, { ...loggerDefault, warn });
-        cloudDatabase.search(null, () => {
-          expect(warn).toHaveBeenCalled();
-          done();
-        });
+        cloudDatabase.search(
+          () => {
+            throw new Error('`onPackage` callback should not have been called.');
+          },
+          () => {
+            expect(warn).toHaveBeenCalled();
+            done();
+          }
+        );
       });
     });
   });
