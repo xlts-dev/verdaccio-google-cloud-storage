@@ -11,7 +11,4 @@
     // TODO: Fix types in caught errors and remove this option.
     "useUnknownInCatchVariables": false,
   },
-  "include": [
-    "src/**/*.ts",
-  ],
 }

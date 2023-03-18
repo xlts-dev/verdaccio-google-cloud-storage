@@ -27,7 +27,7 @@ const loggerDefault: Logger = {
   trace: jest.fn(),
 };
 
-const FileMocked = class {
+class FileMocked implements Partial<File> {
   public name: string;
   public exist: boolean;
   public constructor(fileName, exist) {
@@ -37,15 +37,18 @@ const FileMocked = class {
   public save(): Promise<void> {
     return Promise.resolve();
   }
+  // @ts-expect-error
+  // The correct return type would be `Promise<[boolean]>`, but ESLint cannot parse `[boolean]`.
+  // Switching to `boolean[]` (which is not accurate) as a work-around.
   public exists(): Promise<boolean[]> {
     return Promise.resolve([this.exist]);
   }
   public download(): Promise<DownloadResponse> {
     return Promise.resolve([Buffer.from(JSON.stringify({ name: 'foo' }))]);
   }
-};
+}
 
-const Bucket = class {
+class Bucket {
   public name: string;
   public exists: boolean;
   public FiledMocked: typeof FileMocked;
@@ -54,10 +57,10 @@ const Bucket = class {
     this.exists = exists;
     this.FiledMocked = File;
   }
-  public file(fileName): File {
+  public file(fileName): FileMocked {
     return new this.FiledMocked(fileName, this.exists);
   }
-};
+}
 
 describe('Google Cloud Storage', () => {
   beforeEach(() => {
@@ -159,11 +162,11 @@ describe('Google Cloud Storage', () => {
       });
 
       test('should fails on package unexpected error', (done) => {
-        const FileMockedFailure = class {
+        class FileMockedFailure extends FileMocked {
           public exists(): Promise<never> {
             return Promise.reject(new Error(API_ERROR.UNKNOWN_ERROR));
           }
-        };
+        }
 
         jest.doMock('../src/storage', () => {
           const originalModule = jest.requireActual('../src/storage').default;
@@ -280,9 +283,9 @@ describe('Google Cloud Storage', () => {
         const store = cloudDatabase.getPackageStorage(packageName);
         expect(store).not.toBeNull();
         if (store) {
-          store.readPackage(pkg.name, (err: VerdaccioError, pkgJson: Package) => {
+          store.readPackage(pkg.name, (err: VerdaccioError, pkgJson?: Package) => {
             expect(err).toBeNull();
-            expect(pkgJson.name).toBe(pkg.name);
+            expect(pkgJson?.name).toBe(pkg.name);
             done();
           });
         }
@@ -339,14 +342,14 @@ describe('Google Cloud Storage', () => {
               // Handle Update
               cb();
             },
-            (_name: string, json: object, cb: Callback) => {
+            (_name: string, json: Package, cb: Callback) => {
               // Write Package
-              expect(json.test).toBe('test');
+              expect(json['test']).toBe('test');
               cb(null);
             },
-            (json: object) => {
+            (json: Package) => {
               // Transformation
-              json.test = 'test';
+              json['test'] = 'test';
               return json;
             },
             (err: VerdaccioError) => {
@@ -366,7 +369,7 @@ describe('Google Cloud Storage', () => {
             'fake404',
             () => undefined,
             () => undefined,
-            () => undefined,
+            (pkg) => pkg,
             (err: VerdaccioError) => {
               expect(err).not.toBeNull();
               expect(err.code).toEqual(HTTP_STATUS.NOT_FOUND);
@@ -385,7 +388,7 @@ describe('Google Cloud Storage', () => {
             'fake404',
             () => undefined,
             () => undefined,
-            () => undefined,
+            (pkg) => pkg,
             (err: VerdaccioError) => {
               expect(err).not.toBeNull();
               expect(err.code).toEqual(HTTP_STATUS.NOT_FOUND);
@@ -400,19 +403,8 @@ describe('Google Cloud Storage', () => {
     describe('GoogleCloudStorageHandler:: writeFile', () => {
       const memfs = new MemoryFileSystem();
       const tarballFile = path.join(__dirname, '/partials/test-pkg/', 'test-pkg-1.0.0.tgz');
-      const FileWriteMocked = class {
-        public name: string;
-        public exist: boolean;
-        public constructor(fileName, exist) {
-          this.name = fileName;
-          this.exist = exist;
-        }
-        public save(): Promise<void> {
-          return Promise.resolve();
-        }
-        public exists(): Promise<boolean[]> {
-          return Promise.resolve([this.exist]);
-        }
+
+      class FileWriteMocked extends FileMocked {
         public createWriteStream(): Writable {
           const stream = memfs.createWriteStream(`/test`);
           // process.nextTick(function() {
@@ -434,7 +426,7 @@ describe('Google Cloud Storage', () => {
 
           return stream;
         }
-      };
+      }
 
       test('should write a tarball successfully push data', (done) => {
         jest.doMock('../src/storage', () => {
