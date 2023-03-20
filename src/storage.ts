@@ -1,4 +1,4 @@
-import internal, { Readable } from 'stream';
+import { Readable, Writable } from 'stream';
 
 import { Bucket, DownloadResponse, File, Storage } from '@google-cloud/storage';
 import {
@@ -281,7 +281,7 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
           } else {
             const file: File = this._getBucket().file(`${this.name}/${name}`);
             this.logger.info({ url: file.name }, 'gcloud: the @{url} is being uploaded to the storage bucket');
-            const fileStream: internal.Writable = file.createWriteStream({
+            const fileStream: Writable = file.createWriteStream({
               validation: this.config?.bucketOptions?.validation || DEFAULT_VALIDATION,
             });
             uploadStream.done = (): void => {
