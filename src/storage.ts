@@ -1,4 +1,4 @@
-import { Readable } from 'stream';
+import { Readable, Writable } from 'stream';
 
 import { Bucket, DownloadResponse, File, Storage } from '@google-cloud/storage';
 import {
@@ -98,7 +98,7 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
   }
 
   public deletePackage(fileName: string, cb: CallbackAction): void {
-    const file = this._buildFilePath(this.name, fileName);
+    const file: File = this._buildFilePath(this.name, fileName);
     this.logger.debug({ name: file.name }, 'gcloud: deleting @{name} from storage');
     try {
       file
@@ -125,7 +125,7 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
   //  Because all files have been removed, the folder structure no longer exists in the bucket.
   public removePackage(callback: CallbackAction): void {
     // remove all files from storage
-    const file = this._getBucket().file(`${this.name}`);
+    const file: File = this._getBucket().file(`${this.name}`);
     this.logger.debug({ name: file.name }, 'gcloud: removing the package @{name} from storage');
     file.delete().then(
       (): void => {
@@ -177,9 +177,9 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
   }
 
   private async _savePackage(name: string, metadata: Package): Promise<void> {
-    const file = this._buildFilePath(name, PACKAGE_JSON);
+    const file: File = this._buildFilePath(name, PACKAGE_JSON);
     try {
-      await file.save(this._convertToString(metadata), {
+      await file.save(JSON.stringify(metadata, null, '\t'), {
         validation: this.config?.bucketOptions?.validation || DEFAULT_VALIDATION,
         /**
          * When resumable is `undefined` - it will default to `true` as per GC Storage documentation:
@@ -191,10 +191,6 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
     } catch (err) {
       throw getInternalError(err.message);
     }
-  }
-
-  private _convertToString(value: Package): string {
-    return JSON.stringify(value, null, '\t');
   }
 
   /**
@@ -232,7 +228,7 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
       return packageJson;
     }
 
-    const file = this._buildFilePath(packageName, PACKAGE_JSON);
+    const file: File = this._buildFilePath(packageName, PACKAGE_JSON);
     try {
       const fileDownloadPromise = file.download();
       GoogleCloudStorageHandler.packageJsonCache[packageName] = {
@@ -283,9 +279,9 @@ class GoogleCloudStorageHandler implements IPackageStorageManager {
             this.logger.debug({ url: this.name }, 'gcloud:  @{url} package already exists in the storage bucket');
             uploadStream.emit('error', packageAlreadyExist(name));
           } else {
-            const file = this._getBucket().file(`${this.name}/${name}`);
+            const file: File = this._getBucket().file(`${this.name}/${name}`);
             this.logger.info({ url: file.name }, 'gcloud: the @{url} is being uploaded to the storage bucket');
-            const fileStream = file.createWriteStream({
+            const fileStream: Writable = file.createWriteStream({
               validation: this.config?.bucketOptions?.validation || DEFAULT_VALIDATION,
             });
             uploadStream.done = (): void => {
