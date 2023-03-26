@@ -23,7 +23,7 @@ commands:
           parent: master
 
   setup:
-    description: 'Download the workspace content from the cache'
+    description: Attach the workspace
     steps:
       - attach_workspace:
           at: ~/
