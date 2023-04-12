@@ -30,7 +30,7 @@
     "lib/"
   ],
   "engines": {
-    "node": ">=12"
+    "node": ">=16"
   },
   "dependencies": {
     "@google-cloud/datastore": "7.2.0",
