@@ -1,6 +1,6 @@
 {
   "name": "@xlts.dev/verdaccio-google-cloud-storage",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Google Cloud storage implementation for Verdaccio",
   "keywords": [
     "verdaccio",
@@ -10,11 +10,13 @@
     "datastore"
   ],
   "author": "Juan Picado <juanpicado19@gmail.com>",
-  "contributors": [{
-    "name": "Ed Clement",
-    "email": "ed@xlts.dev",
-    "url": "https://github.com/edclement"
-  }],
+  "contributors": [
+    {
+      "name": "Ed Clement",
+      "email": "ed@xlts.dev",
+      "url": "https://github.com/edclement"
+    }
+  ],
   "license": "MIT",
   "homepage": "https://verdaccio.org",
   "repository": {
