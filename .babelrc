@@ -1,4 +1,4 @@
 {
-  "presets": [["@verdaccio", {"typescript": true}]],
+  "presets": ["@babel/env", "@babel/typescript"],
   "plugins": ["dynamic-import-node"]
 }
